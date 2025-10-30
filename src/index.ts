@@ -7,6 +7,10 @@ import rateLimit from '@fastify/rate-limit';
 import { config } from './config/index.js';
 import { registerHealth } from './routes/health.routes.js';
 import { registerLecturasRoutes } from './routes/lecturas.routes.js';
+import { registerOrganizacionRoutes } from './routes/organizacion.routes.js';
+import { registerInstalacionRoutes } from './routes/instalacion.routes.js';
+import { registerUsuarioRoutes } from './routes/usuario.routes.js';
+import { registerEspeciesRoutes } from './routes/especies.routes.js';
 import { initLecturasWS } from './services/ws.lecturas.server.js';
 import { startLecturasPoller } from './services/lecturas.poller.js';
 
@@ -33,8 +37,14 @@ await app.register(rateLimit, {
   skipOnError: false
 });
 
+// Register routes
 await registerHealth(app);
 await registerLecturasRoutes(app);
+await registerOrganizacionRoutes(app);
+await registerInstalacionRoutes(app);
+await registerUsuarioRoutes(app);
+await registerEspeciesRoutes(app);
+
 initLecturasWS(app);
 startLecturasPoller(750); // ms
 
@@ -45,4 +55,5 @@ try {
   app.log.error(err);
   process.exit(1);
 }
+
 
