@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Organizacion {
+  id_organizacion   Int       @id @default(autoincrement())
+  nombre            String    @unique
+  estado            String
+  fecha_creacion    DateTime  @default(now())
+  sucursales        OrganizacionSucursal[]
+  @@map("organizacion")
+}
+
+model OrganizacionSucursal {
+  id_organizacion_sucursal Int      @id @default(autoincrement())
+  id_organizacion          Int
+  nombre_sucursal          String
+  estado                   String
+  fecha_creacion           DateTime @default(now())
+  organizacion             Organizacion @relation(fields: [id_organizacion], references: [id_organizacion])
+  instalaciones            Instalacion[]
+  @@map("organizacion_sucursal")
+}
+
+model Instalacion {
+  id_instalacion            Int      @id @default(autoincrement())
+  id_organizacion_sucursal  Int
+  nombre_instalacion        String
+  fecha_creacion            DateTime @default(now())
+  sucursal                  OrganizacionSucursal @relation(fields: [id_organizacion_sucursal], references: [id_organizacion_sucursal])
+  sensores                  SensorInstalado[]
+  @@map("instalacion")
+}
+
+model CatalogoSensor {
+  id_sensor    Int       @id @default(autoincrement())
+  nombre       String    @unique
+  unidad       String?
+  tipo_medida  TipoMedida?
+  rango_min    Decimal?
+  rango_max    Decimal?
+  sensoresInstalados SensorInstalado[]
+  @@map("catalogo_sensores")
+}
+
+enum TipoMedida {
+  temperatura
+  ph
+  oxigeno_disuelto
+  conductividad
+  turbidez
+  salinidad
+  otro
+}
+
+model SensorInstalado {
+  id_sensor_instalado Int      @id @default(autoincrement())
+  id_instalacion      Int
+  id_sensor           Int
+  descripcion         String?
+  fecha_instalada     DateTime? @db.Date
+  instalacion         Instalacion    @relation(fields: [id_instalacion], references: [id_instalacion])
+  catalogo            CatalogoSensor @relation(fields: [id_sensor], references: [id_sensor])
+  lecturas            Lectura[]
+  @@map("sensor_instalado")
+}
+
+model Lectura {
+  id_lectura           BigInt  @id @default(autoincrement())
+  id_sensor_instalado  Int
+  valor                Decimal
+  tomada_en            DateTime
+  sensor               SensorInstalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado])
+  @@index([id_sensor_instalado, tomada_en], name: "idx_lectura_sensor_fecha")
+  @@map("lectura")
+}
+
+model ResumenLecturaHoraria {
+  id_sensor_instalado Int
+  fecha_hora          DateTime
+  min_val             Decimal
+  max_val             Decimal
+  avg_val             Decimal
+  cnt                 Int
+  @@id([id_sensor_instalado, fecha_hora])
+  @@map("resumen_lectura_horaria")
+}
+
+model Promedio15min {
+  id_sensor_instalado Int
+  fecha               DateTime @db.Date
+  hora                DateTime @db.Time(0)
+  promedio            Decimal
+  fecha_actualizacion DateTime
+  @@id([id_sensor_instalado, fecha, hora])
+  @@map("promedio_15min")
+}
+
+// Tablas de ubicación geográfica
+model Estado {
+  id_estado       Int       @id @default(autoincrement())
+  nombre          String
+  codigo          String    @unique
+  municipios      Municipio[]
+  @@map("estados")
+}
+
+model Municipio {
+  id_municipio    Int       @id @default(autoincrement())
+  id_estado       Int
+  nombre          String
+  estado          Estado    @relation(fields: [id_estado], references: [id_estado])
+  codigosPostales CodigoPostal[]
+  @@map("municipios")
+}
+
+model CodigoPostal {
+  id_codigo_postal Int       @id @default(autoincrement())
+  id_municipio     Int
+  codigo_postal    String    @unique
+  municipio        Municipio @relation(fields: [id_municipio], references: [id_municipio])
+  colonias         Colonia[]
+  @@map("codigos_postales")
+}
+
+model Colonia {
+  id_colonia       Int       @id @default(autoincrement())
+  id_codigo_postal Int
+  nombre           String
+  codigoPostal     CodigoPostal @relation(fields: [id_codigo_postal], references: [id_codigo_postal])
+  @@map("colonias")
+}
+
+// Tablas de usuarios y roles
+model Usuario {
+  id_usuario      Int       @id @default(autoincrement())
+  nombre          String
+  email           String    @unique
+  password_hash   String
+  id_tipo_rol     Int
+  activo          Boolean   @default(true)
+  fecha_creacion  DateTime  @default(now())
+  tipoRol         TipoRol   @relation(fields: [id_tipo_rol], references: [id_tipo_rol])
+  @@map("usuario")
+}
+
+model TipoRol {
+  id_tipo_rol     Int       @id @default(autoincrement())
+  nombre_rol      String    @unique
+  descripcion     String?
+  usuarios        Usuario[]
+  @@map("tipo_rol")
+}
+
+// Tablas de alertas y parámetros
+model Alerta {
+  id_alerta           Int       @id @default(autoincrement())
+  id_sensor_instalado Int
+  tipo_alerta         String
+  mensaje             String
+  nivel               NivelAlerta
+  fecha_generada      DateTime  @default(now())
+  fecha_resuelta      DateTime?
+  estado              String    @default("activa")
+  @@index([id_sensor_instalado, fecha_generada])
+  @@map("alertas")
+}
+
+enum NivelAlerta {
+  info
+  warning
+  critical
+}
+
+model Parametro {
+  id_parametro    Int       @id @default(autoincrement())
+  nombre          String    @unique
+  unidad          String?
+  descripcion     String?
+  rango_min       Decimal?
+  rango_max       Decimal?
+  especieParametros EspecieParametro[]
+  @@map("parametros")
+}
+
+// Tablas de especies
+model CatalogoEspecie {
+  id_especie      Int       @id @default(autoincrement())
+  nombre_cientifico String  @unique
+  nombre_comun    String?
+  tipo            String?
+  descripcion     String?
+  especiesInstaladas EspecieInstalada[]
+  @@map("catalogo_especies")
+}
+
+model EspecieInstalada {
+  id_especie_instalada Int       @id @default(autoincrement())
+  id_instalacion       Int
+  id_especie           Int
+  cantidad_inicial     Int?
+  fecha_introduccion   DateTime  @db.Date
+  estado               String    @default("activa")
+  catalogoEspecie      CatalogoEspecie @relation(fields: [id_especie], references: [id_especie])
+  trackings            EspecieTracking[]
+  @@map("especies_instaladas")
+}
+
+model EspecieTracking {
+  id_tracking          Int       @id @default(autoincrement())
+  id_especie_instalada Int
+  fecha_registro       DateTime  @default(now())
+  cantidad_actual      Int
+  observaciones        String?
+  especieInstalada     EspecieInstalada @relation(fields: [id_especie_instalada], references: [id_especie_instalada])
+  @@map("especie_tracking")
+}
+
+model EspecieParametro {
+  id_especie_parametro Int       @id @default(autoincrement())
+  id_especie           Int
+  id_parametro         Int
+  valor_optimo_min     Decimal?
+  valor_optimo_max     Decimal?
+  parametro            Parametro @relation(fields: [id_parametro], references: [id_parametro])
+  @@unique([id_especie, id_parametro])
+  @@map("especie_parametro")
+}
+
+// Tabla de procesos
+model Proceso {
+  id_proceso      Int       @id @default(autoincrement())
+  id_instalacion  Int
+  nombre_proceso  String
+  descripcion     String?
+  fecha_inicio    DateTime  @db.Date
+  fecha_fin       DateTime? @db.Date
+  estado          String    @default("en_progreso")
+  @@map("procesos")
+}
