@@ -76,7 +76,7 @@ model organizacion {
 }
 
 model organizacion_sucursal {
-  id_organizacion_sucursal  Int                 @id @default(autoincrement())
+  id_organizacion_sucursal  Int?                 @id @default(autoincrement())
   id_organizacion           Int
   nombre_sucursal           String              @db.VarChar(160)
   telefono_sucursal         String?             @db.VarChar(20)
