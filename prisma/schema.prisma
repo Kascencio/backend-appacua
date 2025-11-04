@@ -1,6 +1,10 @@
 // Prisma Schema — Aqua Sonda (Org-first, safe db push)
+// ✔ Un solo datasource / un solo generator
+// ✔ ORGANIZACIÓN/ORGANIZACIÓN_SUCURSAL oficial
+// ✔ Sin columnas nuevas requeridas en tablas con datos (usa @map/@@map)
+// ✔ empresa_sucursal como legado opcional (elimínalo cuando migres)
+// ✔ MySQL 5.7 compatible
 
-// ========== Generator / Datasource ==========
 generator client {
   provider = "prisma-client-js"
   output   = "../lib/generated/prisma"
@@ -11,15 +15,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ========== 1) Geografía ==========
+// ============================
+// 1) Geografía (catálogos)
+// ============================
 model estados {
   id_estado             Int                   @id @default(autoincrement())
   nombre                String                @map("nombre_estado") @db.VarChar(45)
   municipios            municipios[]
-  // legado opcional:
+  // legado opcional
   // empresa_sucursal      empresa_sucursal[]
   organizacion          organizacion[]
   organizacion_sucursal organizacion_sucursal[]
+
   @@map("estados")
 }
 
@@ -31,6 +38,7 @@ model municipios {
   codigos_postales  codigos_postales[]
   organizacion      organizacion[]
   organizacion_sucursal organizacion_sucursal[]
+
   @@map("municipios")
   @@index([id_estado], map: "id_estado")
 }
@@ -41,7 +49,7 @@ model codigos_postales {
   codigo_postal    String             @db.VarChar(10)
   municipios       municipios         @relation(fields: [id_municipio], references: [id_municipio], onUpdate: Restrict, map: "fk_cp_municipio")
   colonias         colonias[]
-  // empresa_sucursal empresa_sucursal[]
+
   @@map("codigos_postales")
   @@index([id_municipio], map: "id_municipio")
 }
@@ -51,12 +59,14 @@ model colonias {
   id_cp            Int
   nombre           String           @map("nombre_colonia") @db.VarChar(100)
   codigos_postales codigos_postales @relation(fields: [id_cp], references: [id_cp], onUpdate: Restrict, map: "fk_col_cp")
-  // empresa_sucursal empresa_sucursal[]
+
   @@map("colonias")
   @@index([id_cp], map: "id_cp")
 }
 
-// ========== 2) Organización ==========
+// ============================
+// 2) Organización (nuevo)
+// ============================
 model organizacion {
   id_organizacion           Int                 @id @default(autoincrement())
   nombre                    String              @db.VarChar(160)
@@ -107,13 +117,19 @@ model organizacion_sucursal {
   @@index([id_municipio], map: "idx_organizacion_sucursal_municipio")
 }
 
-enum organizacion_estado { activa inactiva }
+enum organizacion_estado {
+  activa
+  inactiva
+}
 
-// ========== 3) Roles / Usuarios ==========
+// ============================
+// 3) Roles / Usuarios
+// ============================
 model tipo_rol {
   id_rol  Int       @id @default(autoincrement())
   nombre  String    @unique(map: "uq_nombre_rol") @db.VarChar(50)
   usuario usuario[]
+
   @@map("tipo_rol")
 }
 
@@ -135,7 +151,10 @@ model usuario {
   @@index([id_rol], map: "fk_usuario_rol")
 }
 
-enum usuario_estado { activo inactivo }
+enum usuario_estado {
+  activo
+  inactivo
+}
 
 model token_recuperacion {
   id_token   Int      @id @default(autoincrement())
@@ -143,11 +162,14 @@ model token_recuperacion {
   token      String   @unique(map: "uq_token") @db.Char(64)
   expiracion DateTime @db.DateTime(0)
   usuario    usuario  @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_tok_usuario")
+
   @@map("token_recuperacion")
   @@index([id_usuario], map: "fk_tr_usuario")
 }
 
-// ========== 4) Instalaciones / Sensores ==========
+// ============================
+// 4) Instalaciones / Sensores
+// ============================
 model instalacion {
   id_instalacion            Int                     @id @default(autoincrement())
   id_organizacion_sucursal  Int
@@ -169,8 +191,16 @@ model instalacion {
   @@index([id_proceso], map: "id_proceso")
 }
 
-enum instalacion_estado_operativo { activo inactivo }
-enum instalacion_tipo_uso { acuicultura tratamiento otros }
+enum instalacion_estado_operativo {
+  activo
+  inactivo
+}
+
+enum instalacion_tipo_uso {
+  acuicultura
+  tratamiento
+  otros
+}
 
 model catalogo_sensores {
   id_sensor        Int                @id @default(autoincrement())
@@ -181,6 +211,7 @@ model catalogo_sensores {
   rango_medicion   String?            @db.VarChar(45)
   unidad_medida    String?            @db.VarChar(45)
   sensor_instalado sensor_instalado[]
+
   @@map("catalogo_sensores")
 }
 
@@ -207,7 +238,9 @@ model sensor_instalado {
   @@index([id_lectura], map: "id_lectura")
 }
 
-// ========== 5) Asignaciones / Alertas ==========
+// ============================
+// 5) Asignaciones / Alertas
+// ============================
 model asignacion_usuario {
   id_asignacion             Int                     @id @default(autoincrement())
   id_usuario                Int
@@ -240,12 +273,15 @@ model alertas {
   @@index([id_sensor_instalado], map: "id_sensor_instalado")
 }
 
-// ========== 6) Parámetros / Especies / Procesos ==========
+// ============================
+// 6) Parámetros / Especies / Procesos
+// ============================
 model parametros {
   id_parametro      Int                 @id @default(autoincrement())
   nombre_parametro  String?             @db.VarChar(100)
   unidad_medida     String?             @db.VarChar(100)
   especie_parametro especie_parametro[]
+
   @@map("parametros")
 }
 
@@ -254,6 +290,7 @@ model especies {
   nombre            String              @db.VarChar(100)
   procesos          procesos[]
   especie_parametro especie_parametro[]
+
   @@map("especies")
 }
 
@@ -263,8 +300,10 @@ model especie_parametro {
   id_parametro         Int
   Rmax                 Float      @db.Float
   Rmin                 Float      @db.Float
+
   especies             especies   @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "fk_esparam_especie")
   parametros           parametros @relation(fields: [id_parametro], references: [id_parametro], onUpdate: Restrict, map: "fk_esparam_param")
+
   @@map("especie_parametro")
   @@index([id_especie], map: "id_especie")
   @@index([id_parametro], map: "id_parametro")
@@ -275,21 +314,27 @@ model procesos {
   id_especie   Int
   fecha_inicio DateTime   @db.Date
   fecha_final  DateTime   @db.Date
+
   especies     especies   @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "fk_proc_especie")
   instalacion  instalacion[]
+
   @@map("procesos")
   @@index([id_especie], map: "id_especie")
 }
 
-// ========== 7) Lecturas / Promedios ==========
+// ============================
+// 7) Lectura / Promedios (legado actual)
+// ============================
 model lectura {
   id_lectura          Int              @id @default(autoincrement())
   id_sensor_instalado Int
   valor               Decimal          @db.Decimal(10, 2)
   fecha               DateTime         @db.Date
   hora                DateTime         @db.Time(0)
+
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "fk_lectura_sensor_instalado")
   sensor_instalado_sensor_instalado_id_lecturaTolectura sensor_instalado[] @relation("sensor_instalado_id_lecturaTolectura")
+
   @@map("lectura")
   @@index([id_sensor_instalado, fecha], map: "idx_lectura_sensor_fecha")
   @@index([fecha], map: "idx_lectura_fecha")
@@ -302,7 +347,9 @@ model promedio {
   fecha               DateTime         @db.Date
   hora                DateTime         @db.Time(0)
   promedio            Decimal          @db.Decimal(10, 2)
+
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "promedio_ibfk_1")
+
   @@map("promedio")
   @@unique([id_sensor_instalado, fecha, hora], map: "uq_sensor_fecha_hora")
 }
@@ -314,13 +361,17 @@ model resumen_lectura_horaria {
   hora                DateTime         @db.Time(0)
   promedio            Decimal          @db.Decimal(10, 2)
   registros           Int              @default(0)
+
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "resumen_lectura_horaria_ibfk_1")
+
   @@map("resumen_lectura_horaria")
   @@unique([id_sensor_instalado, fecha, hora], map: "uq_sensor_fecha_hora")
 }
 
-// ========== 8) Legado: empresa_sucursal (COMENTADO) ==========
-// Descomenta solo si mantienes los lados opuestos en otros modelos.
+// ============================
+// 8) Legado: empresa_sucursal (quítalo cuando limpies)
+// ============================
+// --- LEGADO empresa_sucursal COMENTADO PARA EVITAR RELACIONES COLGANTES ---
 /*
 model empresa_sucursal {
   id_empresa_sucursal Int                 @id @default(autoincrement())
@@ -342,6 +393,10 @@ model empresa_sucursal {
   codigos_postales    codigos_postales    @relation(fields: [id_cp], references: [id_cp], onUpdate: Restrict, map: "empresa_sucursal_ibfk_3")
   colonias            colonias            @relation(fields: [id_colonia], references: [id_colonia], onUpdate: Restrict, map: "fk_emp_suc_col")
 
+  // si reactivas, asegura lados opuestos en instalacion/asignacion_usuario
+  // instalacion         instalacion[]
+  // asignacion_usuario  asignacion_usuario[]
+
   @@map("empresa_sucursal")
   @@index([id_colonia], map: "id_colonia")
   @@index([id_cp], map: "id_cp")
@@ -349,6 +404,13 @@ model empresa_sucursal {
   @@index([id_padre], map: "id_padre")
 }
 
-enum empresa_sucursal_tipo { empresa sucursal }
-enum empresa_sucursal_estado_operativo { activa inactiva }
+enum empresa_sucursal_tipo {
+  empresa
+  sucursal
+}
+
+enum empresa_sucursal_estado_operativo {
+  activa
+  inactiva
+}
 */
