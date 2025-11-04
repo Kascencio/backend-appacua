@@ -1,9 +1,3 @@
-// Prisma Schema — Aqua Sonda (Org-first, safe db push)
-// ✔ Un solo datasource / un solo generator
-// ✔ ORGANIZACIÓN/ORGANIZACIÓN_SUCURSAL oficial
-// ✔ Sin columnas nuevas requeridas en tablas con datos (usa @map/@@map)
-// ✔ MySQL 5.7 compatible
-
 generator client {
   provider = "prisma-client-js"
   output   = "../lib/generated/prisma"
@@ -106,7 +100,10 @@ model organizacion_sucursal {
   @@index([id_municipio], map: "idx_organizacion_sucursal_municipio")
 }
 
-enum organizacion_estado { activa inactiva }
+enum organizacion_estado {
+  activa
+  inactiva
+}
 
 // ========== 3) Roles / Usuarios ==========
 model tipo_rol {
@@ -134,7 +131,10 @@ model usuario {
   @@index([id_rol], map: "fk_usuario_rol")
 }
 
-enum usuario_estado { activo inactivo }
+enum usuario_estado {
+  activo
+  inactivo
+}
 
 model token_recuperacion {
   id_token   Int      @id @default(autoincrement())
@@ -168,8 +168,15 @@ model instalacion {
   @@index([id_proceso], map: "id_proceso")
 }
 
-enum instalacion_estado_operativo { activo inactivo }
-enum instalacion_tipo_uso { acuicultura tratamiento otros }
+enum instalacion_estado_operativo {
+  activo
+  inactivo
+}
+enum instalacion_tipo_uso {
+  acuicultura
+  tratamiento
+  otros
+}
 
 model catalogo_sensores {
   id_sensor        Int                @id @default(autoincrement())
