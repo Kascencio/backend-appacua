@@ -14,8 +14,9 @@ export function startLecturasPoller(intervalMs = 750) {
         lastSeenId = BigInt(max._max.id_lectura ?? 0);
       }
       const rows = await prisma.$queryRawUnsafe<any[]>(`
-        SELECT l.id_lectura, l.id_sensor_instalado, l.valor, l.tomada_en,
-               si.id_instalacion, cs.tipo_medida
+        SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
+               CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en,
+               si.id_instalacion, cs.sensor AS tipo_medida
         FROM lectura l
         JOIN sensor_instalado si ON si.id_sensor_instalado = l.id_sensor_instalado
         JOIN catalogo_sensores cs ON cs.id_sensor = si.id_sensor

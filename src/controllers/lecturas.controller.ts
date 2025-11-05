@@ -6,18 +6,39 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
   try {
     const q = rangeQuerySchema.parse(req.query);
-    const where: any = { id_sensor_instalado: q.sensorInstaladoId };
-    if (q.from || q.to) {
-      where.tomada_en = {};
-      if (q.from) where.tomada_en.gte = new Date(q.from);
-      if (q.to) where.tomada_en.lte = new Date(q.to);
+    
+    // Usar query raw para combinar fecha y hora
+    let query = `
+      SELECT l.id_lectura, l.id_sensor_instalado, l.valor, 
+             CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en,
+             l.fecha, l.hora
+      FROM lectura l
+      WHERE l.id_sensor_instalado = ?
+    `;
+    const params: any[] = [q.sensorInstaladoId];
+    
+    if (q.from) {
+      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) >= ?`;
+      params.push(q.from);
     }
-    const rows = await prisma.lectura.findMany({
-      where,
-      orderBy: { tomada_en: 'desc' },
-      take: q.limit || 500
-    });
-    return reply.send(rows);
+    if (q.to) {
+      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) <= ?`;
+      params.push(q.to);
+    }
+    
+    query += ` ORDER BY tomada_en DESC LIMIT ?`;
+    params.push(q.limit || 500);
+    
+    const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+    
+    return reply.send(rows.map(r => ({
+      id_lectura: Number(r.id_lectura),
+      id_sensor_instalado: r.id_sensor_instalado,
+      valor: Number(r.valor),
+      tomada_en: new Date(r.tomada_en).toISOString(),
+      fecha: r.fecha,
+      hora: r.hora
+    })));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
   }
@@ -26,17 +47,39 @@ export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
 export async function getResumenHorario(req: FastifyRequest, reply: FastifyReply) {
   try {
     const q = rangeQuerySchema.parse(req.query);
-    const where: any = { id_sensor_instalado: q.sensorInstaladoId };
-    if (q.from || q.to) {
-      where.fecha_hora = {};
-      if (q.from) where.fecha_hora.gte = new Date(q.from);
-      if (q.to) where.fecha_hora.lte = new Date(q.to);
+    
+    // Usar query raw para combinar fecha y hora
+    let query = `
+      SELECT rlh.id_resumen, rlh.id_sensor_instalado, rlh.promedio, rlh.registros,
+             CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) AS fecha_hora,
+             rlh.fecha, rlh.hora
+      FROM resumen_lectura_horaria rlh
+      WHERE rlh.id_sensor_instalado = ?
+    `;
+    const params: any[] = [q.sensorInstaladoId];
+    
+    if (q.from) {
+      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) >= ?`;
+      params.push(q.from);
     }
-    const rows = await prisma.resumenLecturaHoraria.findMany({
-      where,
-      orderBy: { fecha_hora: 'asc' }
-    });
-    return reply.send(rows);
+    if (q.to) {
+      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) <= ?`;
+      params.push(q.to);
+    }
+    
+    query += ` ORDER BY fecha_hora ASC`;
+    
+    const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+    
+    return reply.send(rows.map(r => ({
+      id_resumen: Number(r.id_resumen),
+      id_sensor_instalado: r.id_sensor_instalado,
+      promedio: Number(r.promedio),
+      registros: Number(r.registros),
+      fecha_hora: new Date(r.fecha_hora).toISOString(),
+      fecha: r.fecha,
+      hora: r.hora
+    })));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
   }
@@ -72,19 +115,32 @@ export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
       })));
     } else {
       // hour (resumen_lectura_horaria)
-      const where: any = { id_sensor_instalado: q.sensorInstaladoId };
-      if (q.from || q.to) {
-        where.fecha_hora = {};
-        if (q.from) where.fecha_hora.gte = new Date(q.from);
-        if (q.to) where.fecha_hora.lte = new Date(q.to);
+      let query = `
+        SELECT rlh.id_sensor_instalado,
+               CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) AS ts,
+               rlh.promedio
+        FROM resumen_lectura_horaria rlh
+        WHERE rlh.id_sensor_instalado = ?
+      `;
+      const params: any[] = [q.sensorInstaladoId];
+      
+      if (q.from) {
+        query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) >= ?`;
+        params.push(q.from);
       }
-      const rows = await prisma.resumenLecturaHoraria.findMany({
-        where, orderBy: { fecha_hora: 'asc' }
-      });
+      if (q.to) {
+        query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) <= ?`;
+        params.push(q.to);
+      }
+      
+      query += ` ORDER BY ts ASC`;
+      
+      const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+      
       return reply.send(rows.map(r => ({
         id_sensor_instalado: r.id_sensor_instalado,
-        timestamp: r.fecha_hora.toISOString(),
-        promedio: Number(r.avg_val)
+        timestamp: new Date(r.ts).toISOString(),
+        promedio: Number(r.promedio)
       })));
     }
   } catch (error: any) {
@@ -95,19 +151,33 @@ export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
 export async function getReporteXML(req: FastifyRequest, reply: FastifyReply) {
   try {
     const q = rangeQuerySchema.parse(req.query);
-    const where: any = { id_sensor_instalado: q.sensorInstaladoId };
-    if (q.from || q.to) {
-      where.tomada_en = {};
-      if (q.from) where.tomada_en.gte = new Date(q.from);
-      if (q.to) where.tomada_en.lte = new Date(q.to);
+    
+    // Usar query raw para combinar fecha y hora
+    let query = `
+      SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
+             CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en
+      FROM lectura l
+      WHERE l.id_sensor_instalado = ?
+    `;
+    const params: any[] = [q.sensorInstaladoId];
+    
+    if (q.from) {
+      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) >= ?`;
+      params.push(q.from);
     }
-    const rows = await prisma.lectura.findMany({
-      where, orderBy: { tomada_en: 'asc' }
-    });
-    const avg = rows.length ? rows.reduce((a, r) => a + Number(r.valor), 0) / rows.length : null;
+    if (q.to) {
+      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) <= ?`;
+      params.push(q.to);
+    }
+    
+    query += ` ORDER BY tomada_en ASC`;
+    
+    const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+    
+    const avg = rows.length ? rows.reduce((a: number, r: any) => a + Number(r.valor), 0) / rows.length : null;
     const xml = buildReportXML(
       q.sensorInstaladoId, 
-      rows.map(r => ({ timestamp: r.tomada_en, valor: Number(r.valor) })), 
+      rows.map((r: any) => ({ timestamp: new Date(r.tomada_en), valor: Number(r.valor) })), 
       avg
     );
     reply.type('application/xml');

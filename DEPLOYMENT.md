@@ -27,14 +27,59 @@ c8a1b2d feat: middleware seguridad (CORS, helmet, JWT, validators Zod)
 
 ## 🚀 Deployment Steps
 
-### 1. Pre-requisitos en Servidor
+### Instalación Automática en Debian/Ubuntu
+
+Para una instalación automatizada en sistemas Debian/Ubuntu:
 
 ```bash
-# Asegurar Node.js 18+
-node --version
+# Clonar repositorio
+git clone <tu-repo-url> aqua-backend
+cd aqua-backend
+
+# Ejecutar script de instalación
+chmod +x scripts/install-debian-ubuntu.sh
+./scripts/install-debian-ubuntu.sh
+
+# El script instalará:
+# - Node.js 20+ (desde NodeSource)
+# - PM2 globalmente
+# - Dependencias del proyecto
+# - Configurará .env básico
+# - Generará cliente Prisma
+# - Compilará el proyecto
+```
+
+**Nota**: El script requiere permisos de sudo para instalar paquetes del sistema.
+
+### Instalación Manual
+
+### 1. Pre-requisitos en Servidor Debian/Ubuntu
+
+```bash
+# Actualizar sistema
+sudo apt-get update
+
+# Instalar Node.js 18+ (usando NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Verificar instalación
+node --version  # Debe ser 18 o superior
+npm --version
 
 # Instalar PM2 globalmente
-npm install -g pm2
+sudo npm install -g pm2
+
+# Instalar MySQL (si no está instalado)
+sudo apt-get install -y mysql-server
+sudo mysql_secure_installation
+
+# O usar MySQL en Docker
+docker run --name mysql-aqua \
+  -e MYSQL_ROOT_PASSWORD=tu_password \
+  -e MYSQL_DATABASE=aqua_sonda \
+  -p 3306:3306 \
+  -d mysql:8.0
 
 # Verificar MySQL corriendo
 mysql -u root -p -e "SHOW DATABASES LIKE 'aqua_sonda';"
@@ -249,9 +294,12 @@ pm2 logs aqua-backend
 
 ### Error: Port 3000 already in use
 ```bash
+# En Debian/Ubuntu
 # Cambiar PORT en .env
 # O matar proceso
-lsof -ti:3000 | xargs kill -9
+sudo fuser -k 3000/tcp
+# O encontrar y matar
+sudo lsof -ti:3000 | xargs kill -9
 ```
 
 ### Error: Prisma Client not generated
@@ -263,11 +311,14 @@ pm2 restart aqua-backend
 
 ### WebSocket no conecta
 ```bash
-# Verificar firewall
-sudo ufw allow 3000
+# En Debian/Ubuntu - Verificar firewall
+sudo ufw allow 3000/tcp
+sudo ufw reload
 
 # Verificar que el puerto está escuchando
-netstat -tulpn | grep 3000
+sudo netstat -tulpn | grep 3000
+# O usar ss
+sudo ss -tulpn | grep 3000
 ```
 
 ## 📝 Notas Importantes
@@ -289,6 +340,54 @@ Revisar archivo de logs:
 ```bash
 tail -f logs/out.log
 tail -f logs/err.log
+```
+
+## 🐧 Compatibilidad con Debian/Ubuntu
+
+Este proyecto ha sido verificado y es completamente compatible con sistemas Debian/Ubuntu.
+
+### Requisitos Verificados
+
+- ✅ **Node.js 18+**: Compatible con instalación desde NodeSource
+- ✅ **MySQL 8.0+**: Compatible con paquetes oficiales de Debian/Ubuntu
+- ✅ **PM2**: Funciona correctamente en sistemas Linux
+- ✅ **ESM Modules**: Compatible con Node.js en Linux
+- ✅ **Prisma**: Funciona correctamente con MySQL en Linux
+- ✅ **File System**: Rutas y permisos compatibles con Linux
+
+### Problemas Corregidos para Compatibilidad
+
+1. **Schema Prisma**: Corregido output path incorrecto
+2. **Queries SQL**: Corregidas referencias a campos inexistentes (`tomada_en`, `fecha_hora`)
+3. **Poller de lecturas**: Corregido para usar campos correctos del schema
+4. **Imports ESM**: Verificados y compatibles con Node.js en Linux
+
+### Comandos Específicos de Debian/Ubuntu
+
+```bash
+# Verificar servicios
+sudo systemctl status mysql
+sudo systemctl status pm2-<usuario>
+
+# Ver logs del sistema
+sudo journalctl -u mysql -f
+sudo tail -f /var/log/syslog
+
+# Verificar puertos
+sudo netstat -tulpn | grep 3000
+sudo ss -tulpn | grep 3000
+
+# Verificar permisos de archivos
+ls -la logs/
+chmod 755 logs/
+```
+
+### Variables de Entorno en Linux
+
+Asegúrate de que el archivo `.env` tenga los permisos correctos:
+
+```bash
+chmod 600 .env  # Solo lectura/escritura para el propietario
 ```
 
 ## ✨ Siguiente Fase (Opcional)
