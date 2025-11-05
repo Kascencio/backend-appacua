@@ -15,7 +15,7 @@ export async function createInstalacion(req: FastifyRequest, reply: FastifyReply
 export async function getInstalaciones(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const instalaciones = await prisma.instalacion.findMany({
-      include: { sucursal: true, sensores: true }
+      include: { organizacion_sucursal: true, sensor_instalado: true }
     });
     reply.send(instalaciones);
   } catch (error: any) {
@@ -28,7 +28,7 @@ export async function getInstalacionById(req: FastifyRequest<{ Params: { id: str
     const id = parseInt(req.params.id);
     const instalacion = await prisma.instalacion.findUnique({
       where: { id_instalacion: id },
-      include: { sucursal: true, sensores: { include: { catalogo: true } } }
+      include: { organizacion_sucursal: true, sensor_instalado: { include: { catalogo_sensores: true } } }
     });
     
     if (!instalacion) {
@@ -71,7 +71,7 @@ export async function deleteInstalacion(req: FastifyRequest<{ Params: { id: stri
 export async function createCatalogoSensor(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const sensor = await prisma.catalogoSensor.create({ data: body });
+    const sensor = await prisma.catalogo_sensores.create({ data: body });
     reply.status(201).send(sensor);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -80,7 +80,7 @@ export async function createCatalogoSensor(req: FastifyRequest, reply: FastifyRe
 
 export async function getCatalogoSensores(_req: FastifyRequest, reply: FastifyReply) {
   try {
-    const sensores = await prisma.catalogoSensor.findMany();
+    const sensores = await prisma.catalogo_sensores.findMany();
     reply.send(sensores);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -90,7 +90,7 @@ export async function getCatalogoSensores(_req: FastifyRequest, reply: FastifyRe
 export async function getCatalogoSensorById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const sensor = await prisma.catalogoSensor.findUnique({
+    const sensor = await prisma.catalogo_sensores.findUnique({
       where: { id_sensor: id }
     });
     
@@ -109,7 +109,7 @@ export async function updateCatalogoSensor(req: FastifyRequest<{ Params: { id: s
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const sensor = await prisma.catalogoSensor.update({
+    const sensor = await prisma.catalogo_sensores.update({
       where: { id_sensor: id },
       data: body
     });
@@ -123,7 +123,7 @@ export async function updateCatalogoSensor(req: FastifyRequest<{ Params: { id: s
 export async function deleteCatalogoSensor(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.catalogoSensor.delete({ where: { id_sensor: id } });
+    await prisma.catalogo_sensores.delete({ where: { id_sensor: id } });
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -134,7 +134,7 @@ export async function deleteCatalogoSensor(req: FastifyRequest<{ Params: { id: s
 export async function createSensorInstalado(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const sensorInstalado = await prisma.sensorInstalado.create({ data: body });
+    const sensorInstalado = await prisma.sensor_instalado.create({ data: body });
     reply.status(201).send(sensorInstalado);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -143,8 +143,8 @@ export async function createSensorInstalado(req: FastifyRequest, reply: FastifyR
 
 export async function getSensoresInstalados(_req: FastifyRequest, reply: FastifyReply) {
   try {
-    const sensores = await prisma.sensorInstalado.findMany({
-      include: { instalacion: true, catalogo: true }
+    const sensores = await prisma.sensor_instalado.findMany({
+      include: { instalacion: true, catalogo_sensores: true }
     });
     reply.send(sensores);
   } catch (error: any) {
@@ -155,9 +155,9 @@ export async function getSensoresInstalados(_req: FastifyRequest, reply: Fastify
 export async function getSensorInstaladoById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const sensor = await prisma.sensorInstalado.findUnique({
+    const sensor = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: id },
-      include: { instalacion: true, catalogo: true }
+      include: { instalacion: true, catalogo_sensores: true }
     });
     
     if (!sensor) {
@@ -175,7 +175,7 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const sensor = await prisma.sensorInstalado.update({
+    const sensor = await prisma.sensor_instalado.update({
       where: { id_sensor_instalado: id },
       data: body
     });
@@ -189,7 +189,7 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
 export async function deleteSensorInstalado(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.sensorInstalado.delete({ where: { id_sensor_instalado: id } });
+    await prisma.sensor_instalado.delete({ where: { id_sensor_instalado: id } });
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });

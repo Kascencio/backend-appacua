@@ -17,12 +17,12 @@ export async function getUsuarios(_req: FastifyRequest, reply: FastifyReply) {
     const usuarios = await prisma.usuario.findMany({
       select: {
         id_usuario: true,
-        nombre: true,
-        email: true,
-        id_tipo_rol: true,
-        activo: true,
+        nombre_completo: true,
+        correo: true,
+        id_rol: true,
+        estado: true,
         fecha_creacion: true,
-        tipoRol: true,
+        tipo_rol: true,
         password_hash: false
       }
     });
@@ -39,12 +39,12 @@ export async function getUsuarioById(req: FastifyRequest<{ Params: { id: string 
       where: { id_usuario: id },
       select: {
         id_usuario: true,
-        nombre: true,
-        email: true,
-        id_tipo_rol: true,
-        activo: true,
+        nombre_completo: true,
+        correo: true,
+        id_rol: true,
+        estado: true,
         fecha_creacion: true,
-        tipoRol: true,
+        tipo_rol: true,
         password_hash: false
       }
     });
@@ -89,7 +89,7 @@ export async function deleteUsuario(req: FastifyRequest<{ Params: { id: string }
 export async function createTipoRol(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const tipoRol = await prisma.tipoRol.create({ data: body });
+    const tipoRol = await prisma.tipo_rol.create({ data: body });
     reply.status(201).send(tipoRol);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -98,7 +98,7 @@ export async function createTipoRol(req: FastifyRequest, reply: FastifyReply) {
 
 export async function getTiposRol(_req: FastifyRequest, reply: FastifyReply) {
   try {
-    const roles = await prisma.tipoRol.findMany();
+    const roles = await prisma.tipo_rol.findMany();
     reply.send(roles);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -108,8 +108,8 @@ export async function getTiposRol(_req: FastifyRequest, reply: FastifyReply) {
 export async function getTipoRolById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const rol = await prisma.tipoRol.findUnique({
-      where: { id_tipo_rol: id }
+    const rol = await prisma.tipo_rol.findUnique({
+      where: { id_rol: id }
     });
     
     if (!rol) {
@@ -127,8 +127,8 @@ export async function updateTipoRol(req: FastifyRequest<{ Params: { id: string }
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const rol = await prisma.tipoRol.update({
-      where: { id_tipo_rol: id },
+    const rol = await prisma.tipo_rol.update({
+      where: { id_rol: id },
       data: body
     });
     
@@ -141,7 +141,7 @@ export async function updateTipoRol(req: FastifyRequest<{ Params: { id: string }
 export async function deleteTipoRol(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.tipoRol.delete({ where: { id_tipo_rol: id } });
+    await prisma.tipo_rol.delete({ where: { id_rol: id } });
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -152,7 +152,7 @@ export async function deleteTipoRol(req: FastifyRequest<{ Params: { id: string }
 export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const alerta = await prisma.alerta.create({ data: body });
+    const alerta = await prisma.alertas.create({ data: body });
     reply.status(201).send(alerta);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -162,9 +162,8 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
 export async function getAlertas(req: FastifyRequest<{ Querystring: { estado?: string } }>, reply: FastifyReply) {
   try {
     const { estado } = req.query;
-    const alertas = await prisma.alerta.findMany({
-      where: estado ? { estado } : undefined,
-      orderBy: { fecha_generada: 'desc' }
+    const alertas = await prisma.alertas.findMany({
+      where: estado ? { estado } : undefined
     });
     reply.send(alertas);
   } catch (error: any) {
@@ -175,8 +174,8 @@ export async function getAlertas(req: FastifyRequest<{ Querystring: { estado?: s
 export async function getAlertaById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const alerta = await prisma.alerta.findUnique({
-      where: { id_alerta: id }
+    const alerta = await prisma.alertas.findUnique({
+      where: { id_alertas: id }
     });
     
     if (!alerta) {
@@ -194,8 +193,8 @@ export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } 
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const alerta = await prisma.alerta.update({
-      where: { id_alerta: id },
+    const alerta = await prisma.alertas.update({
+      where: { id_alertas: id },
       data: body
     });
     
@@ -208,7 +207,7 @@ export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } 
 export async function deleteAlerta(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.alerta.delete({ where: { id_alerta: id } });
+    await prisma.alertas.delete({ where: { id_alertas: id } });
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -219,7 +218,7 @@ export async function deleteAlerta(req: FastifyRequest<{ Params: { id: string } 
 export async function createParametro(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const parametro = await prisma.parametro.create({ data: body });
+    const parametro = await prisma.parametros.create({ data: body });
     reply.status(201).send(parametro);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -228,7 +227,7 @@ export async function createParametro(req: FastifyRequest, reply: FastifyReply) 
 
 export async function getParametros(_req: FastifyRequest, reply: FastifyReply) {
   try {
-    const parametros = await prisma.parametro.findMany();
+    const parametros = await prisma.parametros.findMany();
     reply.send(parametros);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -238,7 +237,7 @@ export async function getParametros(_req: FastifyRequest, reply: FastifyReply) {
 export async function getParametroById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const parametro = await prisma.parametro.findUnique({
+    const parametro = await prisma.parametros.findUnique({
       where: { id_parametro: id }
     });
     
@@ -257,7 +256,7 @@ export async function updateParametro(req: FastifyRequest<{ Params: { id: string
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const parametro = await prisma.parametro.update({
+    const parametro = await prisma.parametros.update({
       where: { id_parametro: id },
       data: body
     });
@@ -271,7 +270,7 @@ export async function updateParametro(req: FastifyRequest<{ Params: { id: string
 export async function deleteParametro(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.parametro.delete({ where: { id_parametro: id } });
+    await prisma.parametros.delete({ where: { id_parametro: id } });
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });

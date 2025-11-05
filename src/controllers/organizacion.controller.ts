@@ -5,7 +5,12 @@ import { createOrganizacionSchema, updateOrganizacionSchema } from '../utils/val
 export async function createOrganizacion(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = createOrganizacionSchema.parse(req.body);
-    const organizacion = await prisma.organizacion.create({ data: body });
+    // Convertir estado string a enum
+    const data = {
+      ...body,
+      estado: body.estado as 'activa' | 'inactiva'
+    };
+    const organizacion = await prisma.organizacion.create({ data });
     reply.status(201).send(organizacion);
   } catch (error: any) {
     reply.status(400).send({ error: error.message || 'Error al crear organización' });
@@ -15,7 +20,7 @@ export async function createOrganizacion(req: FastifyRequest, reply: FastifyRepl
 export async function getOrganizaciones(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const organizaciones = await prisma.organizacion.findMany({
-      include: { sucursales: true }
+      include: { organizacion_sucursal: true }
     });
     reply.send(organizaciones);
   } catch (error: any) {
@@ -28,7 +33,7 @@ export async function getOrganizacionById(req: FastifyRequest<{ Params: { id: st
     const id = parseInt(req.params.id);
     const organizacion = await prisma.organizacion.findUnique({
       where: { id_organizacion: id },
-      include: { sucursales: true }
+      include: { organizacion_sucursal: true }
     });
     
     if (!organizacion) {
@@ -46,9 +51,15 @@ export async function updateOrganizacion(req: FastifyRequest<{ Params: { id: str
     const id = parseInt(req.params.id);
     const body = updateOrganizacionSchema.parse(req.body);
     
+    // Convertir estado string a enum si existe
+    const data: any = { ...body };
+    if (body.estado) {
+      data.estado = body.estado as 'activa' | 'inactiva';
+    }
+    
     const organizacion = await prisma.organizacion.update({
       where: { id_organizacion: id },
-      data: body
+      data
     });
     
     reply.send(organizacion);
@@ -74,7 +85,7 @@ export async function deleteOrganizacion(req: FastifyRequest<{ Params: { id: str
 export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
-    const sucursal = await prisma.organizacionSucursal.create({ data: body });
+    const sucursal = await prisma.organizacion_sucursal.create({ data: body });
     reply.status(201).send(sucursal);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -83,8 +94,8 @@ export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
 
 export async function getSucursales(_req: FastifyRequest, reply: FastifyReply) {
   try {
-    const sucursales = await prisma.organizacionSucursal.findMany({
-      include: { organizacion: true, instalaciones: true }
+    const sucursales = await prisma.organizacion_sucursal.findMany({
+      include: { organizacion: true, instalacion: true }
     });
     reply.send(sucursales);
   } catch (error: any) {
@@ -95,9 +106,9 @@ export async function getSucursales(_req: FastifyRequest, reply: FastifyReply) {
 export async function getSucursalById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const sucursal = await prisma.organizacionSucursal.findUnique({
+    const sucursal = await prisma.organizacion_sucursal.findUnique({
       where: { id_organizacion_sucursal: id },
-      include: { organizacion: true, instalaciones: true }
+      include: { organizacion: true, instalacion: true }
     });
     
     if (!sucursal) {
@@ -115,7 +126,7 @@ export async function updateSucursal(req: FastifyRequest<{ Params: { id: string 
     const id = parseInt(req.params.id);
     const body = req.body as any;
     
-    const sucursal = await prisma.organizacionSucursal.update({
+    const sucursal = await prisma.organizacion_sucursal.update({
       where: { id_organizacion_sucursal: id },
       data: body
     });
@@ -129,7 +140,7 @@ export async function updateSucursal(req: FastifyRequest<{ Params: { id: string 
 export async function deleteSucursal(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    await prisma.organizacionSucursal.delete({
+    await prisma.organizacion_sucursal.delete({
       where: { id_organizacion_sucursal: id }
     });
     
