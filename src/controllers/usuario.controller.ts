@@ -159,11 +159,20 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-export async function getAlertas(req: FastifyRequest<{ Querystring: { estado?: string } }>, reply: FastifyReply) {
+export async function getAlertas(req: FastifyRequest<{ Querystring: { id_instalacion?: string; id_sensor_instalado?: string } }>, reply: FastifyReply) {
   try {
-    const { estado } = req.query;
+    const { id_instalacion, id_sensor_instalado } = req.query;
+    const where: any = {};
+    
+    if (id_instalacion) {
+      where.id_instalacion = parseInt(id_instalacion);
+    }
+    if (id_sensor_instalado) {
+      where.id_sensor_instalado = parseInt(id_sensor_instalado);
+    }
+    
     const alertas = await prisma.alertas.findMany({
-      where: estado ? { estado } : undefined
+      where: Object.keys(where).length > 0 ? where : undefined
     });
     reply.send(alertas);
   } catch (error: any) {
