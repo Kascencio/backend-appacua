@@ -180,7 +180,7 @@ backend/
 
 ```env
 NODE_ENV=production
-PORT=3000
+PORT=3300
 HOST=0.0.0.0
 JWT_SECRET=your_secure_secret_here
 DATABASE_URL="mysql://user:password@localhost:3306/aqua_sonda"

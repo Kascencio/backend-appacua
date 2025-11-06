@@ -103,7 +103,7 @@ if [ ! -f ".env" ]; then
         echo -e "${YELLOW}Creando .env básico...${NC}"
         cat > .env << EOF
 NODE_ENV=production
-PORT=3000
+PORT=3300
 HOST=0.0.0.0
 JWT_SECRET=$(openssl rand -base64 32)
 DATABASE_URL="mysql://usuario:password@localhost:3306/aqua_sonda"
@@ -133,6 +133,6 @@ echo "5. Configura auto-start: pm2 startup"
 echo ""
 echo "Para verificar que todo funciona:"
 echo "  pm2 logs aqua-backend"
-echo "  curl http://localhost:3000/health"
+echo "  curl http://localhost:3300/health"
 echo ""
 

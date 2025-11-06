@@ -166,38 +166,38 @@ pm2 flush aqua-backend
 
 ### Health Check
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3300/health
 # Esperado: {"status":"ok","timestamp":"..."}
 ```
 
 ### Test CRUD
 ```bash
 # Crear organización
-curl -X POST http://localhost:3000/api/organizaciones \
+curl -X POST http://localhost:3300/api/organizaciones \
   -H "Content-Type: application/json" \
   -d '{"nombre":"Test Org","estado":"activo"}'
 
 # Listar organizaciones
-curl http://localhost:3000/api/organizaciones
+curl http://localhost:3300/api/organizaciones
 ```
 
 ### Test WebSocket
 ```javascript
 // Conectar con wscat o navegador
-const ws = new WebSocket('ws://localhost:3000/ws/lecturas?sensorInstaladoId=1');
+const ws = new WebSocket('ws://localhost:3300/ws/lecturas?sensorInstaladoId=1');
 ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
 ### Test Lecturas
 ```bash
 # Obtener lecturas
-curl "http://localhost:3000/api/lecturas?sensorInstaladoId=1&limit=10"
+curl "http://localhost:3300/api/lecturas?sensorInstaladoId=1&limit=10"
 
 # Promedios 15min
-curl "http://localhost:3000/api/promedios?granularity=15min&sensorInstaladoId=1"
+curl "http://localhost:3300/api/promedios?granularity=15min&sensorInstaladoId=1"
 
 # Reporte XML
-curl "http://localhost:3000/api/reportes/xml?sensorInstaladoId=1" > reporte.xml
+curl "http://localhost:3300/api/reportes/xml?sensorInstaladoId=1" > reporte.xml
 ```
 
 ## 🛡️ Seguridad en Producción
@@ -205,7 +205,7 @@ curl "http://localhost:3000/api/reportes/xml?sensorInstaladoId=1" > reporte.xml
 ### Variables de Entorno
 ```env
 NODE_ENV=production
-PORT=3000
+PORT=3300
 HOST=0.0.0.0
 JWT_SECRET=<generar-secreto-fuerte>  # openssl rand -base64 32
 DATABASE_URL="mysql://user:pass@localhost:3306/aqua_sonda"
@@ -252,9 +252,9 @@ COPY dist ./dist
 COPY scripts ./scripts
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=3300
 
-EXPOSE 3000
+EXPOSE 3300
 
 CMD ["node", "dist/index.js"]
 ```
@@ -292,14 +292,14 @@ mysql -u <user> -p<password> -h localhost aqua_sonda
 pm2 logs aqua-backend
 ```
 
-### Error: Port 3000 already in use
+### Error: Port 3300 already in use
 ```bash
 # En Debian/Ubuntu
 # Cambiar PORT en .env
 # O matar proceso
-sudo fuser -k 3000/tcp
+sudo fuser -k 3300/tcp
 # O encontrar y matar
-sudo lsof -ti:3000 | xargs kill -9
+sudo lsof -ti:3300 | xargs kill -9
 ```
 
 ### Error: Prisma Client not generated
@@ -312,13 +312,13 @@ pm2 restart aqua-backend
 ### WebSocket no conecta
 ```bash
 # En Debian/Ubuntu - Verificar firewall
-sudo ufw allow 3000/tcp
+sudo ufw allow 3300/tcp
 sudo ufw reload
 
 # Verificar que el puerto está escuchando
-sudo netstat -tulpn | grep 3000
+sudo netstat -tulpn | grep 3300
 # O usar ss
-sudo ss -tulpn | grep 3000
+sudo ss -tulpn | grep 3300
 ```
 
 ## 📝 Notas Importantes
@@ -374,8 +374,8 @@ sudo journalctl -u mysql -f
 sudo tail -f /var/log/syslog
 
 # Verificar puertos
-sudo netstat -tulpn | grep 3000
-sudo ss -tulpn | grep 3000
+sudo netstat -tulpn | grep 3300
+sudo ss -tulpn | grep 3300
 
 # Verificar permisos de archivos
 ls -la logs/
