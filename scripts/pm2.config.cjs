@@ -1,8 +1,11 @@
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: "aqua-backend",
       script: "dist/index.js",
+      cwd: path.resolve(__dirname, '..'), // Ensure PM2 runs from the root directory
       instances: 1,
       exec_mode: "fork",
       watch: false,
