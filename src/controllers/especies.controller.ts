@@ -27,11 +27,11 @@ export async function getCatalogoEspecieById(req: FastifyRequest<{ Params: { id:
     const especie = await prisma.especies.findUnique({
       where: { id_especie: id }
     });
-    
+
     if (!especie) {
       return reply.status(404).send({ error: 'Especie no encontrada' });
     }
-    
+
     reply.send(especie);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -42,12 +42,12 @@ export async function updateCatalogoEspecie(req: FastifyRequest<{ Params: { id: 
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const especie = await prisma.especies.update({
       where: { id_especie: id },
       data: body
     });
-    
+
     reply.send(especie);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -116,11 +116,11 @@ export async function getEspecieParametroById(req: FastifyRequest<{ Params: { id
       where: { id_especie_parametro: id },
       include: { parametros: true }
     });
-    
+
     if (!parametro) {
       return reply.status(404).send({ error: 'Especie parámetro no encontrado' });
     }
-    
+
     reply.send(parametro);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -131,12 +131,12 @@ export async function updateEspecieParametro(req: FastifyRequest<{ Params: { id:
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const parametro = await prisma.especie_parametro.update({
       where: { id_especie_parametro: id },
       data: body
     });
-    
+
     reply.send(parametro);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -179,11 +179,11 @@ export async function getProcesoById(req: FastifyRequest<{ Params: { id: string 
     const proceso = await prisma.procesos.findUnique({
       where: { id_proceso: id }
     });
-    
+
     if (!proceso) {
       return reply.status(404).send({ error: 'Proceso no encontrado' });
     }
-    
+
     reply.send(proceso);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -194,12 +194,12 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const proceso = await prisma.procesos.update({
       where: { id_proceso: id },
       data: body
     });
-    
+
     reply.send(proceso);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });

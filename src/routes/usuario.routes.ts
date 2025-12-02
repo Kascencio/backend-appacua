@@ -3,6 +3,7 @@ import * as userController from '../controllers/usuario.controller.js';
 
 export async function registerUsuarioRoutes(app: FastifyInstance) {
   // Usuarios
+  app.post('/api/login', userController.login);
   app.post('/api/usuarios', userController.createUsuario);
   app.get('/api/usuarios', userController.getUsuarios);
   app.get('/api/usuarios/:id', userController.getUsuarioById);

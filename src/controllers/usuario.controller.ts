@@ -1,14 +1,48 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../repositories/prisma.js';
+import bcrypt from 'bcryptjs';
 
 // USUARIOS
 export async function createUsuario(req: FastifyRequest, reply: FastifyReply) {
   try {
     const body = req.body as any;
+    if (body.password) {
+      body.password_hash = await bcrypt.hash(body.password, 10);
+      delete body.password;
+    }
     const usuario = await prisma.usuario.create({ data: body });
     reply.status(201).send(usuario);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
+  }
+}
+
+export async function login(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { correo, password } = req.body as any;
+    const usuario = await prisma.usuario.findUnique({
+      where: { correo },
+      include: { tipo_rol: true }
+    });
+
+    if (!usuario || !usuario.password_hash) {
+      return reply.status(401).send({ error: 'Credenciales inválidas' });
+    }
+
+    const valid = await bcrypt.compare(password, usuario.password_hash);
+    if (!valid) {
+      return reply.status(401).send({ error: 'Credenciales inválidas' });
+    }
+
+    const token = req.server.jwt.sign({
+      id: usuario.id_usuario,
+      email: usuario.correo,
+      role: usuario.tipo_rol.nombre
+    });
+
+    reply.send({ token, usuario });
+  } catch (error: any) {
+    reply.status(500).send({ error: error.message });
   }
 }
 
@@ -48,11 +82,11 @@ export async function getUsuarioById(req: FastifyRequest<{ Params: { id: string 
         password_hash: false
       }
     });
-    
+
     if (!usuario) {
       return reply.status(404).send({ error: 'Usuario no encontrado' });
     }
-    
+
     reply.send(usuario);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -63,12 +97,12 @@ export async function updateUsuario(req: FastifyRequest<{ Params: { id: string }
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const usuario = await prisma.usuario.update({
       where: { id_usuario: id },
       data: body
     });
-    
+
     reply.send(usuario);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -111,11 +145,11 @@ export async function getTipoRolById(req: FastifyRequest<{ Params: { id: string 
     const rol = await prisma.tipo_rol.findUnique({
       where: { id_rol: id }
     });
-    
+
     if (!rol) {
       return reply.status(404).send({ error: 'Tipo de rol no encontrado' });
     }
-    
+
     reply.send(rol);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -126,12 +160,12 @@ export async function updateTipoRol(req: FastifyRequest<{ Params: { id: string }
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const rol = await prisma.tipo_rol.update({
       where: { id_rol: id },
       data: body
     });
-    
+
     reply.send(rol);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -163,14 +197,14 @@ export async function getAlertas(req: FastifyRequest<{ Querystring: { id_instala
   try {
     const { id_instalacion, id_sensor_instalado } = req.query;
     const where: any = {};
-    
+
     if (id_instalacion) {
       where.id_instalacion = parseInt(id_instalacion);
     }
     if (id_sensor_instalado) {
       where.id_sensor_instalado = parseInt(id_sensor_instalado);
     }
-    
+
     const alertas = await prisma.alertas.findMany({
       where: Object.keys(where).length > 0 ? where : undefined
     });
@@ -186,11 +220,11 @@ export async function getAlertaById(req: FastifyRequest<{ Params: { id: string }
     const alerta = await prisma.alertas.findUnique({
       where: { id_alertas: id }
     });
-    
+
     if (!alerta) {
       return reply.status(404).send({ error: 'Alerta no encontrada' });
     }
-    
+
     reply.send(alerta);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -201,12 +235,12 @@ export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } 
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const alerta = await prisma.alertas.update({
       where: { id_alertas: id },
       data: body
     });
-    
+
     reply.send(alerta);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -249,11 +283,11 @@ export async function getParametroById(req: FastifyRequest<{ Params: { id: strin
     const parametro = await prisma.parametros.findUnique({
       where: { id_parametro: id }
     });
-    
+
     if (!parametro) {
       return reply.status(404).send({ error: 'Parámetro no encontrado' });
     }
-    
+
     reply.send(parametro);
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
@@ -264,12 +298,12 @@ export async function updateParametro(req: FastifyRequest<{ Params: { id: string
   try {
     const id = parseInt(req.params.id);
     const body = req.body as any;
-    
+
     const parametro = await prisma.parametros.update({
       where: { id_parametro: id },
       data: body
     });
-    
+
     reply.send(parametro);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
