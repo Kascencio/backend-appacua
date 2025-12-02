@@ -4,7 +4,8 @@ module.exports = {
   apps: [
     {
       name: "aqua-backend",
-      script: "dist/index.js",
+      script: "npm",
+      args: "start",
       cwd: path.resolve(__dirname, '..'), // Ensure PM2 runs from the root directory
       instances: 1,
       exec_mode: "fork",
