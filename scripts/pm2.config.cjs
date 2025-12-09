@@ -13,12 +13,12 @@ module.exports = {
       max_memory_restart: '512M',
       env_production: {
         NODE_ENV: "production",
-        PORT: process.env.PORT || 3300,
+        PORT: process.env.PORT || 3301,
         HOST: process.env.HOST || '0.0.0.0'
       },
       env_development: {
         NODE_ENV: "development",
-        PORT: 3300,
+        PORT: 3301,
         HOST: '0.0.0.0'
       },
       error_file: './logs/err.log',

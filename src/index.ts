@@ -14,14 +14,14 @@ import { registerEspeciesRoutes } from './routes/especies.routes.js';
 import { initLecturasWS } from './services/ws.lecturas.server.js';
 import { startLecturasPoller } from './services/lecturas.poller.js';
 
-const app = Fastify({ 
+const app = Fastify({
   logger: {
     level: config.env === 'production' ? 'info' : 'debug'
   }
 });
 
 // Security middleware
-await app.register(helmet, { 
+await app.register(helmet, {
   contentSecurityPolicy: false // Disable CSP for WebSocket support
 });
 await app.register(cors, {
@@ -31,10 +31,18 @@ await app.register(cors, {
 
 await app.register(websocket);
 await app.register(jwt, { secret: config.jwtSecret });
-await app.register(rateLimit, { 
-  max: 300, 
+await app.register(rateLimit, {
+  max: 300,
   timeWindow: '1 minute',
   skipOnError: false
+});
+
+// Root route to prevent 404 logs
+app.get('/', async () => ({ message: 'Aqua Backend API Running' }));
+
+// Favicon route to prevent 404 logs
+app.get('/favicon.ico', async (_req, reply) => {
+  reply.code(204).send();
 });
 
 // Register routes
