@@ -27,6 +27,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "pm2": "^5.4.2",
     "rimraf": "^5.0.5",
     "ts-node": "^10.9.2",

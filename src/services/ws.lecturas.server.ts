@@ -1,15 +1,16 @@
 import { FastifyInstance } from 'fastify';
+import type { WebSocket } from 'ws';
 import { wsFilterSchema } from '../utils/validators.js';
 
 type WSConnection = {
-  socket: any;
+  socket: WebSocket;
   filters: { sensorInstaladoId?: number; instalacionId?: number };
 };
 
 const connections = new Set<WSConnection>();
 
 export function initLecturasWS(app: FastifyInstance) {
-  app.get('/ws/lecturas', { websocket: true }, (conn, req) => {
+  app.get('/ws/lecturas', { websocket: true }, (socket: WebSocket, req) => {
     // parse filters from query
     const url = new URL(req.url, 'http://localhost');
     const params = Object.fromEntries(url.searchParams.entries());
@@ -21,13 +22,13 @@ export function initLecturasWS(app: FastifyInstance) {
       });
       filters = parsed;
     } catch (e: any) {
-      conn.socket.send(JSON.stringify({ type: 'error', message: e.message }));
-      conn.socket.close();
+      socket.send(JSON.stringify({ type: 'error', message: e.message }));
+      socket.close();
       return;
     }
-    const ref = { socket: conn.socket, filters };
+    const ref = { socket, filters };
     connections.add(ref);
-    conn.socket.on('close', () => connections.delete(ref));
+    socket.on('close', () => connections.delete(ref));
   });
 }
 

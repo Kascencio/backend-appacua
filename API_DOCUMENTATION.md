@@ -31,10 +31,10 @@ El backend AQUA SONDA es una API REST construida con **Fastify** que proporciona
 ### Base URL
 
 ```
-http://localhost:3300
+http://195.35.11.179:3300
 ```
 
-En producción, reemplaza `localhost:3300` con tu dominio y puerto.
+En producción, reemplaza `195.35.11.179:3300` con tu dominio y puerto.
 
 ---
 
@@ -67,7 +67,7 @@ Verifica el estado del servidor.
 **Ejemplo de Request:**
 
 ```bash
-curl http://localhost:3300/health
+curl http://195.35.11.179:3300/health
 ```
 
 **Ejemplo de Response:**
@@ -85,7 +85,7 @@ curl http://localhost:3300/health
 
 ### Conexión WebSocket
 
-**URL:** `ws://localhost:3300/ws/lecturas`
+**URL:** `ws://195.35.11.179:3300/ws/lecturas`
 
 **Parámetros de Query (obligatorio al menos uno):**
 - `sensorInstaladoId` (opcional): ID del sensor instalado
@@ -95,7 +95,7 @@ curl http://localhost:3300/health
 
 ```javascript
 // JavaScript (Browser)
-const ws = new WebSocket('ws://localhost:3300/ws/lecturas?sensorInstaladoId=1');
+const ws = new WebSocket('ws://195.35.11.179:3300/ws/lecturas?sensorInstaladoId=1');
 
 ws.onopen = () => {
   console.log('WebSocket conectado');
@@ -119,7 +119,7 @@ ws.onclose = () => {
 // Node.js
 const WebSocket = require('ws');
 
-const ws = new WebSocket('ws://localhost:3300/ws/lecturas?instalacionId=5');
+const ws = new WebSocket('ws://195.35.11.179:3300/ws/lecturas?instalacionId=5');
 
 ws.on('open', () => {
   console.log('Conectado');
@@ -183,7 +183,7 @@ Obtiene lecturas de sensores con filtros opcionales.
 **Ejemplo de Request:**
 
 ```bash
-curl "http://localhost:3300/api/lecturas?sensorInstaladoId=1&from=2025-01-01T00:00:00Z&to=2025-01-31T23:59:59Z&limit=100"
+curl "http://195.35.11.179:3300/api/lecturas?sensorInstaladoId=1&from=2025-01-01T00:00:00Z&to=2025-01-31T23:59:59Z&limit=100"
 ```
 
 **Ejemplo de Response:**
@@ -215,7 +215,7 @@ Obtiene resúmenes horarios de lecturas.
 **Ejemplo de Request:**
 
 ```bash
-curl "http://localhost:3300/api/resumen-horario?sensorInstaladoId=1&from=2025-01-01T00:00:00Z"
+curl "http://195.35.11.179:3300/api/resumen-horario?sensorInstaladoId=1&from=2025-01-01T00:00:00Z"
 ```
 
 **Ejemplo de Response:**
@@ -249,7 +249,7 @@ Obtiene promedios de lecturas con granularidad configurable.
 **Ejemplo de Request:**
 
 ```bash
-curl "http://localhost:3300/api/promedios?granularity=15min&sensorInstaladoId=1&from=2025-01-01T00:00:00Z"
+curl "http://195.35.11.179:3300/api/promedios?granularity=15min&sensorInstaladoId=1&from=2025-01-01T00:00:00Z"
 ```
 
 **Ejemplo de Response:**
@@ -278,7 +278,7 @@ Genera un reporte XML con las lecturas de un sensor.
 **Ejemplo de Request:**
 
 ```bash
-curl "http://localhost:3300/api/reportes/xml?sensorInstaladoId=1&from=2025-01-01T00:00:00Z&to=2025-01-31T23:59:59Z" \
+curl "http://195.35.11.179:3300/api/reportes/xml?sensorInstaladoId=1&from=2025-01-01T00:00:00Z&to=2025-01-31T23:59:59Z" \
   -H "Accept: application/xml" \
   -o reporte.xml
 ```
@@ -738,7 +738,7 @@ Obtiene todas las alertas con filtros opcionales.
 **Ejemplo:**
 
 ```bash
-curl "http://localhost:3300/api/alertas?id_instalacion=1"
+curl "http://195.35.11.179:3300/api/alertas?id_instalacion=1"
 ```
 
 ---
@@ -839,6 +839,49 @@ Actualiza una especie del catálogo.
 ### DELETE `/api/catalogo-especies/:id`
 
 Elimina una especie del catálogo.
+
+---
+
+### POST `/api/especies-instaladas`
+
+Asigna una especie a una instalación.
+
+**Request Body:**
+
+```json
+{
+  "id_instalacion": 1,
+  "id_especie": 1,
+  "fecha_siembra": "2025-01-01",
+  "cantidad_inicial": 1000,
+  "densidad_siembra": 50.0,
+  "biomasa_inicial": 10.5
+}
+```
+
+---
+
+### GET `/api/especies-instaladas`
+
+Obtiene todas las especies instaladas.
+
+---
+
+### GET `/api/especies-instaladas/:id`
+
+Obtiene una especie instalada por ID.
+
+---
+
+### PUT `/api/especies-instaladas/:id`
+
+Actualiza una especie instalada.
+
+---
+
+### DELETE `/api/especies-instaladas/:id`
+
+Elimina una especie instalada.
 
 ---
 
@@ -985,7 +1028,7 @@ Todos los errores siguen este formato:
 
 ```javascript
 // 1. Conectar WebSocket
-const ws = new WebSocket('ws://localhost:3000/ws/lecturas?sensorInstaladoId=1');
+const ws = new WebSocket('ws://195.35.11.179:3300/ws/lecturas?sensorInstaladoId=1');
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -998,7 +1041,7 @@ ws.onmessage = (event) => {
 // 2. Obtener historial
 async function getHistorial() {
   const response = await fetch(
-    'http://localhost:3300/api/lecturas?sensorInstaladoId=1&limit=100'
+    'http://195.35.11.179:3300/api/lecturas?sensorInstaladoId=1&limit=100'
   );
   const lecturas = await response.json();
   return lecturas;
@@ -1007,7 +1050,7 @@ async function getHistorial() {
 // 3. Obtener promedios
 async function getPromedios() {
   const response = await fetch(
-    'http://localhost:3300/api/promedios?granularity=hour&sensorInstaladoId=1'
+    'http://195.35.11.179:3300/api/promedios?granularity=hour&sensorInstaladoId=1'
   );
   const promedios = await response.json();
   return promedios;
@@ -1019,7 +1062,7 @@ async function getPromedios() {
 ```javascript
 // Crear instalación
 async function crearInstalacion(data) {
-  const response = await fetch('http://localhost:3300/api/instalaciones', {
+  const response = await fetch('http://195.35.11.179:3300/api/instalaciones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -1029,13 +1072,13 @@ async function crearInstalacion(data) {
 
 // Obtener instalaciones con sensores
 async function getInstalaciones() {
-  const response = await fetch('http://localhost:3300/api/instalaciones');
+  const response = await fetch('http://195.35.11.179:3300/api/instalaciones');
   return await response.json();
 }
 
 // Instalar sensor
 async function instalarSensor(instalacionId, sensorId) {
-  const response = await fetch('http://localhost:3300/api/sensores-instalados', {
+  const response = await fetch('http://195.35.11.179:3300/api/sensores-instalados', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1053,7 +1096,7 @@ async function instalarSensor(instalacionId, sensorId) {
 
 ```javascript
 async function generarReporteXML(sensorId, fechaInicio, fechaFin) {
-  const url = new URL('http://localhost:3300/api/reportes/xml');
+  const url = new URL('http://195.35.11.179:3300/api/reportes/xml');
   url.searchParams.append('sensorInstaladoId', sensorId);
   url.searchParams.append('from', fechaInicio);
   url.searchParams.append('to', fechaFin);
