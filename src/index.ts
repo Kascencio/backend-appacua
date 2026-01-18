@@ -53,7 +53,8 @@ await registerInstalacionRoutes(app);
 await registerUsuarioRoutes(app);
 await registerEspeciesRoutes(app);
 
-initLecturasWS(app);
+// Register WebSocket AFTER all HTTP routes but BEFORE listen
+await initLecturasWS(app);
 startLecturasPoller(750); // ms
 
 try {
