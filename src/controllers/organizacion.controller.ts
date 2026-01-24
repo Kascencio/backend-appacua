@@ -1,6 +1,11 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../repositories/prisma.js';
-import { createOrganizacionSchema, updateOrganizacionSchema } from '../utils/validators.js';
+import {
+  createOrganizacionSchema,
+  updateOrganizacionSchema,
+  createSucursalSchema,
+  updateSucursalSchema
+} from '../utils/validators.js';
 
 export async function createOrganizacion(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -84,8 +89,18 @@ export async function deleteOrganizacion(req: FastifyRequest<{ Params: { id: str
 // Sucursales
 export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const body = req.body as any;
-    const sucursal = await prisma.organizacion_sucursal.create({ data: body });
+    const body = createSucursalSchema.parse(req.body);
+    const sucursal = await prisma.organizacion_sucursal.create({
+      data: {
+        id_organizacion: body.id_organizacion,
+        nombre_sucursal: body.nombre_sucursal,
+        telefono_sucursal: (req.body as any)?.telefono_sucursal,
+        correo_sucursal: (req.body as any)?.correo_sucursal,
+        id_estado: (req.body as any)?.id_estado,
+        id_municipio: (req.body as any)?.id_municipio,
+        estado: (body.estado ?? 'activa') as 'activa' | 'inactiva'
+      }
+    });
     reply.status(201).send(sucursal);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -124,11 +139,24 @@ export async function getSucursalById(req: FastifyRequest<{ Params: { id: string
 export async function updateSucursal(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const body = req.body as any;
+    const body = updateSucursalSchema.parse(req.body);
+
+    const data: any = {
+      id_organizacion: body.id_organizacion,
+      nombre_sucursal: body.nombre_sucursal,
+      estado: body.estado as any
+    };
+
+    // Permitir actualizar campos extra si vienen (sin romper compatibilidad)
+    const raw: any = req.body as any;
+    if (raw.telefono_sucursal !== undefined) data.telefono_sucursal = raw.telefono_sucursal;
+    if (raw.correo_sucursal !== undefined) data.correo_sucursal = raw.correo_sucursal;
+    if (raw.id_estado !== undefined) data.id_estado = raw.id_estado;
+    if (raw.id_municipio !== undefined) data.id_municipio = raw.id_municipio;
     
     const sucursal = await prisma.organizacion_sucursal.update({
       where: { id_organizacion_sucursal: id },
-      data: body
+      data
     });
     
     reply.send(sucursal);

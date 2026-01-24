@@ -88,6 +88,42 @@ export async function getResumenHorario(req: FastifyRequest, reply: FastifyReply
 export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
   try {
     const q = promediosQuerySchema.parse(req.query);
+
+    // Promedio personalizado: agrupa lecturas por bloques de N minutos.
+    // Ideal para gráficas con intervalos variables sin crear tablas nuevas.
+    if (q.bucketMinutes) {
+      let query = `
+        SELECT l.id_sensor_instalado,
+               FROM_UNIXTIME(
+                 FLOOR(UNIX_TIMESTAMP(TIMESTAMP(l.fecha, l.hora)) / (? * 60)) * (? * 60)
+               ) AS ts,
+               ROUND(AVG(l.valor), 2) AS promedio,
+               COUNT(*) AS muestras
+        FROM lectura l
+        WHERE l.id_sensor_instalado = ?
+      `;
+      const params: any[] = [q.bucketMinutes, q.bucketMinutes, q.sensorInstaladoId];
+
+      if (q.from) {
+        query += ` AND TIMESTAMP(l.fecha, l.hora) >= ?`;
+        params.push(q.from);
+      }
+      if (q.to) {
+        query += ` AND TIMESTAMP(l.fecha, l.hora) <= ?`;
+        params.push(q.to);
+      }
+
+      query += ` GROUP BY l.id_sensor_instalado, ts ORDER BY ts ASC`;
+
+      const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+      return reply.send(rows.map(r => ({
+        id_sensor_instalado: r.id_sensor_instalado,
+        bucket_minutes: q.bucketMinutes,
+        timestamp: new Date(r.ts).toISOString(),
+        promedio: Number(r.promedio),
+        muestras: Number(r.muestras)
+      })));
+    }
     
     if (q.granularity === '15min') {
       // Query for 15-minute averages
@@ -95,7 +131,7 @@ export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
         SELECT id_sensor_instalado, 
                CAST(CONCAT(fecha,' ',hora) AS DATETIME) AS ts, 
                promedio
-        FROM promedio_15min
+        FROM promedios
         WHERE id_sensor_instalado = ?
           ${q.from ? 'AND CAST(CONCAT(fecha," ",hora) AS DATETIME) >= ?' : ''}
           ${q.to ? 'AND CAST(CONCAT(fecha," ",hora) AS DATETIME) <= ?' : ''}

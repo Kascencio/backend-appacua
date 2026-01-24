@@ -196,6 +196,10 @@ curl "http://localhost:3300/api/lecturas?sensorInstaladoId=1&limit=10"
 # Promedios 15min
 curl "http://localhost:3300/api/promedios?granularity=15min&sensorInstaladoId=1"
 
+# Promedios personalizados (bucket en minutos)
+curl "http://localhost:3300/api/promedios?bucketMinutes=5&sensorInstaladoId=1"
+curl "http://localhost:3300/api/promedios?bucketMinutes=30&sensorInstaladoId=1"
+
 # Reporte XML
 curl "http://localhost:3300/api/reportes/xml?sensorInstaladoId=1" > reporte.xml
 ```
@@ -328,6 +332,18 @@ sudo ss -tulpn | grep 3300
 3. Triggers para agregados deben existir en MySQL
 4. WebSocket usa poller incremental (750ms)
 5. Límite de lecturas: 5000 por query
+
+### ✅ Crear/Actualizar triggers de agregados (promedio para gráficas)
+
+Prisma **no** crea triggers desde `schema.prisma`. Para mantener `promedios` (15 min) y `resumen_lectura_horaria` (por hora), aplica el script:
+
+```bash
+# En el servidor (ajusta usuario/host/password)
+mysql -u <user> -p -h <host> aqua_sonda < scripts/sql/triggers_agregados.sql
+
+# Verificar
+mysql -u <user> -p -h <host> -e "SHOW TRIGGERS FROM aqua_sonda;"
+```
 
 ## 📞 Soporte
 

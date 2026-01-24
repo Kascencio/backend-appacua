@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../repositories/prisma.js';
+import { createProcesoSchema, updateProcesoSchema } from '../utils/validators.js';
 
 // CATÁLOGO ESPECIES
 export async function createCatalogoEspecie(req: FastifyRequest, reply: FastifyReply) {
@@ -156,8 +157,14 @@ export async function deleteEspecieParametro(req: FastifyRequest<{ Params: { id:
 // PROCESOS
 export async function createProceso(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const body = req.body as any;
-    const proceso = await prisma.procesos.create({ data: body });
+    const body = createProcesoSchema.parse(req.body);
+    const proceso = await prisma.procesos.create({
+      data: {
+        id_especie: body.id_especie,
+        fecha_inicio: body.fecha_inicio,
+        fecha_final: body.fecha_final
+      }
+    });
     reply.status(201).send(proceso);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -193,11 +200,17 @@ export async function getProcesoById(req: FastifyRequest<{ Params: { id: string 
 export async function updateProceso(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const id = parseInt(req.params.id);
-    const body = req.body as any;
+    const body = updateProcesoSchema.parse(req.body);
+
+    const data: any = {
+      id_especie: body.id_especie,
+      fecha_inicio: body.fecha_inicio,
+      fecha_final: body.fecha_final
+    };
 
     const proceso = await prisma.procesos.update({
       where: { id_proceso: id },
-      data: body
+      data
     });
 
     reply.send(proceso);
