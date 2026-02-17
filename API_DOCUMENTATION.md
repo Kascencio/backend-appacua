@@ -842,46 +842,11 @@ Elimina una especie del catálogo.
 
 ---
 
-### POST `/api/especies-instaladas`
+### Estado de `/api/especies-instaladas`
 
-Asigna una especie a una instalación.
+Este conjunto de endpoints fue retirado porque no tenía implementación real en el backend (respondía `501 Not Implemented`).
 
-**Request Body:**
-
-```json
-{
-  "id_instalacion": 1,
-  "id_especie": 1,
-  "fecha_siembra": "2025-01-01",
-  "cantidad_inicial": 1000,
-  "densidad_siembra": 50.0,
-  "biomasa_inicial": 10.5
-}
-```
-
----
-
-### GET `/api/especies-instaladas`
-
-Obtiene todas las especies instaladas.
-
----
-
-### GET `/api/especies-instaladas/:id`
-
-Obtiene una especie instalada por ID.
-
----
-
-### PUT `/api/especies-instaladas/:id`
-
-Actualiza una especie instalada.
-
----
-
-### DELETE `/api/especies-instaladas/:id`
-
-Elimina una especie instalada.
+Si se requiere esta funcionalidad nuevamente, primero debe agregarse el modelo correspondiente en `prisma/schema.prisma` y luego exponer los endpoints.
 
 ---
 
@@ -1135,10 +1100,8 @@ El servidor tiene un límite de **300 requests por minuto por IP**. Si excedes e
 
 Para más información o soporte, consulta:
 - `DEPLOYMENT.md` - Guía de despliegue
-- `COMPATIBILIDAD_DEBIAN_UBUNTU.md` - Compatibilidad con sistemas Linux
-- Logs del servidor: `pm2 logs aqua-backend`
+- Logs del servidor: `docker compose logs -f aqua-backend`
 
 ---
 
-**Última actualización:** 2025-11-05
-
+**Última actualización:** 2026-02-11

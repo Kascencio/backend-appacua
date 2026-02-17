@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { parseDateForPrisma, parseTimeForPrisma } from './date.utils.js';
+import { parseDateForPrisma } from './date.utils.js';
 
 const prismaDate = z.preprocess((v) => parseDateForPrisma(v), z.date());
 const prismaDateOptional = z.preprocess((v) => parseDateForPrisma(v), z.date().optional());
-const prismaTimeOptional = z.preprocess((v) => parseTimeForPrisma(v), z.date().optional());
 
 // Lecturas & Agregados
 export const rangeQuerySchema = z.object({
@@ -102,82 +101,10 @@ export const updateSensorInstaladoSchema = z.object({
   id_lectura: z.coerce.number().int().positive().optional()
 });
 
-// CRUD Schemas - Usuario
-export const createUsuarioSchema = z.object({
-  nombre: z.string().min(1).max(200),
-  email: z.string().email(),
-  password_hash: z.string().min(6),
-  id_tipo_rol: z.number().int().positive(),
-  activo: z.boolean().optional()
-});
-
-export const updateUsuarioSchema = createUsuarioSchema.partial();
-
-// CRUD Schemas - TipoRol
-export const createTipoRolSchema = z.object({
-  nombre_rol: z.string().min(1).max(100),
-  descripcion: z.string().max(500).optional()
-});
-
-export const updateTipoRolSchema = createTipoRolSchema.partial();
-
-// CRUD Schemas - Alerta
-export const createAlertaSchema = z.object({
-  id_sensor_instalado: z.number().int().positive(),
-  tipo_alerta: z.string().min(1).max(100),
-  mensaje: z.string().min(1),
-  nivel: z.enum(['info', 'warning', 'critical']),
-  estado: z.string().max(50).optional()
-});
-
-export const updateAlertaSchema = z.object({
-  fecha_resuelta: z.string().datetime().optional(),
-  estado: z.string().max(50).optional()
-});
-
-// CRUD Schemas - Parametro
-export const createParametroSchema = z.object({
-  nombre: z.string().min(1).max(100),
-  unidad: z.string().max(50).optional(),
-  descripcion: z.string().max(500).optional(),
-  rango_min: z.number().optional(),
-  rango_max: z.number().optional()
-});
-
-export const updateParametroSchema = createParametroSchema.partial();
-
-// CRUD Schemas - Especies
-export const createCatalogoEspecieSchema = z.object({
-  nombre_cientifico: z.string().min(1).max(200),
-  nombre_comun: z.string().max(200).optional(),
-  tipo: z.string().max(100).optional(),
-  descripcion: z.string().optional()
-});
-
-export const updateCatalogoEspecieSchema = createCatalogoEspecieSchema.partial();
-
-export const createEspecieInstaladaSchema = z.object({
-  id_instalacion: z.number().int().positive(),
-  id_especie: z.number().int().positive(),
-  cantidad_inicial: z.number().int().nonnegative().optional(),
-  fecha_introduccion: z.string().datetime(),
-  estado: z.string().max(50).optional()
-});
-
-export const updateEspecieInstaladaSchema = createEspecieInstaladaSchema.partial();
-
-export const createEspecieParametroSchema = z.object({
-  id_especie: z.number().int().positive(),
-  id_parametro: z.number().int().positive(),
-  valor_optimo_min: z.number().optional(),
-  valor_optimo_max: z.number().optional()
-});
-
-export const updateEspecieParametroSchema = createEspecieParametroSchema.partial();
-
 // CRUD Schemas - Proceso
 export const createProcesoSchema = z.object({
   id_especie: z.coerce.number().int().positive(),
+  id_instalacion: z.coerce.number().int().positive().optional(),
   fecha_inicio: prismaDate,
   fecha_final: prismaDate
 }).refine(v => v.fecha_final > v.fecha_inicio, {
@@ -186,6 +113,7 @@ export const createProcesoSchema = z.object({
 
 export const updateProcesoSchema = z.object({
   id_especie: z.coerce.number().int().positive().optional(),
+  id_instalacion: z.coerce.number().int().positive().optional(),
   fecha_inicio: prismaDateOptional,
   fecha_final: prismaDateOptional
 }).superRefine((v, ctx) => {
@@ -196,4 +124,3 @@ export const updateProcesoSchema = z.object({
     });
   }
 });
-

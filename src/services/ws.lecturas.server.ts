@@ -8,6 +8,7 @@ type WSConnection = {
 };
 
 const connections = new Set<WSConnection>();
+const notificationConnections = new Set<WebSocket>();
 
 export async function initLecturasWS(app: FastifyInstance) {
   app.get('/ws/lecturas', { websocket: true }, (connection, req: FastifyRequest) => {
@@ -59,8 +60,27 @@ export async function initLecturasWS(app: FastifyInstance) {
       connections.delete(ref);
     });
   });
+
+  app.get('/ws/notificaciones', { websocket: true }, (connection, _req: FastifyRequest) => {
+    const socket: WebSocket = (connection as any).socket ?? connection;
+    notificationConnections.add(socket);
+
+    socket.send(JSON.stringify({
+      type: 'connected',
+      channel: 'notificaciones',
+      message: 'Conexión de notificaciones establecida'
+    }));
+
+    socket.on('close', () => {
+      notificationConnections.delete(socket);
+    });
+
+    socket.on('error', () => {
+      notificationConnections.delete(socket);
+    });
+  });
   
-  app.log.info('WebSocket route /ws/lecturas registered');
+  app.log.info('WebSocket routes /ws/lecturas and /ws/notificaciones registered');
 }
 
 export function broadcastLecturaCreated(event: any) {
@@ -77,6 +97,17 @@ export function broadcastLecturaCreated(event: any) {
   }
 }
 
-export function getConnectionsCount(): number {
-  return connections.size;
+export function broadcastNotification(event: { type: string; data?: any }) {
+  const payload = JSON.stringify({
+    ...event,
+    timestamp: new Date().toISOString()
+  });
+
+  for (const socket of notificationConnections) {
+    try {
+      if (socket.readyState === 1) {
+        socket.send(payload);
+      }
+    } catch {}
+  }
 }

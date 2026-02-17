@@ -16,6 +16,18 @@ export async function registerUsuarioRoutes(app: FastifyInstance) {
   app.get('/api/tipos-rol/:id', userController.getTipoRolById);
   app.put('/api/tipos-rol/:id', userController.updateTipoRol);
   app.delete('/api/tipos-rol/:id', userController.deleteTipoRol);
+  // Alias legacy frontend
+  app.post('/api/roles', userController.createTipoRol);
+  app.get('/api/roles', userController.getTiposRol);
+  app.get('/api/roles/:id', userController.getTipoRolById);
+  app.put('/api/roles/:id', userController.updateTipoRol);
+  app.delete('/api/roles/:id', userController.deleteTipoRol);
+
+  // Asignaciones Usuario
+  app.post('/api/asignacion-usuario', userController.createAsignacionUsuario);
+  app.get('/api/asignacion-usuario', userController.getAsignacionesUsuario);
+  app.get('/api/asignacion-usuario/:id', userController.getAsignacionUsuarioById);
+  app.delete('/api/asignacion-usuario/:id', userController.deleteAsignacionUsuario);
 
   // Alertas
   app.post('/api/alertas', userController.createAlerta);

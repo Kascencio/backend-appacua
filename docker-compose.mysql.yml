@@ -1,0 +1,29 @@
+services:
+  mysql:
+    container_name: aqua-mysql
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_dev}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-aqua_sonda}
+      MYSQL_USER: ${MYSQL_USER:-aqua_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-aqua_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root_password_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  aqua-backend:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-aqua_user}:${MYSQL_PASSWORD:-aqua_password}@mysql:3306/${MYSQL_DATABASE:-aqua_sonda}
+
+volumes:
+  mysql_data:
