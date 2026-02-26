@@ -1,6 +1,6 @@
 services:
   aqua-backend:
-    image: ${DOCKER_IMAGE}
+    image: ${DOCKER_IMAGE:-keaf13/aqua-backend:latest}
     container_name: aqua-backend
     restart: unless-stopped
     pull_policy: always
