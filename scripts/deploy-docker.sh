@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE_FILES=(-f docker-compose.yml)
-IMAGE_NAME="${DOCKER_IMAGE:-backned:latest}"
+IMAGE_NAME="${DOCKER_IMAGE:-aqua-backend:latest}"
 NETWORK_NAME="${DOCKER_NETWORK:-aqua-backend-network}"
 
 if [[ "${1:-}" == "--with-mysql" ]]; then

@@ -52,7 +52,7 @@ TELEGRAM_ENABLED=true
 TELEGRAM_BOT_TOKEN=<TOKEN>
 TELEGRAM_CHAT_ID=<CHAT_ID>
 
-DOCKER_IMAGE=backned:latest
+DOCKER_IMAGE=aqua-backend:latest
 DOCKER_NETWORK=aqua-backend-network
 ```
 
@@ -85,7 +85,7 @@ npm run seed
 ## 7) Build y despliegue Docker
 Build local:
 ```bash
-docker build -t backned:latest .
+docker build -t aqua-backend:latest .
 ```
 
 Run local:
@@ -93,20 +93,20 @@ Run local:
 docker run -d --name aqua-backend \
   -p 3300:3300 \
   --env-file .env \
-  backned:latest
+  aqua-backend:latest
 ```
 
 Publicar a Docker Hub:
 ```bash
-docker tag backned:latest <DOCKERHUB_USER>/backned:latest
-docker push <DOCKERHUB_USER>/backned:latest
+docker tag aqua-backend:latest <DOCKERHUB_USER>/aqua-backend:latest
+docker push <DOCKERHUB_USER>/aqua-backend:latest
 ```
 
 Portainer (recomendado):
-1. Crear container desde imagen.
-2. Mapear puerto `3300:3300`.
-3. Cargar variables `.env`.
-4. Adjuntar red adecuada (`aqua-backend-network` si aplica).
+1. Subir imagen a Docker Hub/GHCR (`<DOCKERHUB_USER>/aqua-backend:latest`).
+2. En Portainer > Stacks, usar `portainer-stack.yml`.
+3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
+4. Deployar el stack y validar `GET /health`.
 
 ## 8) Endpoints principales
 ### 8.1 Salud
