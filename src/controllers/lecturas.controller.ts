@@ -9,6 +9,59 @@ import {
   type RequestScope,
 } from '../utils/access-control.js';
 
+type ProcesoLecturaResponse = {
+  id_lectura: number;
+  id_sensor_instalado: number;
+  valor: number;
+  fecha: Date;
+  hora: Date;
+  timestamp: string;
+  id_instalacion?: number;
+  nombre_instalacion?: string;
+  nombre_sensor: string;
+  tipo_sensor: string;
+  unidad_medida?: string;
+};
+
+type ParametroLecturaPoint = {
+  valor: number;
+  timestamp: string;
+  estado: 'normal';
+};
+
+type ParametroMonitoreoResponse = {
+  id_parametro: number;
+  nombre_parametro: string;
+  unidad_medida: string;
+  valor_actual: number;
+  estado: 'normal';
+  ultima_lectura: string;
+  promedio: number;
+  alertas_count: number;
+  lecturas: ParametroLecturaPoint[];
+};
+
+type ProcesoLecturasPayload = {
+  lecturas: ProcesoLecturaResponse[];
+  parametros: ParametroMonitoreoResponse[];
+  proceso_id: number;
+  periodo: { inicio: string; fin: string };
+  total_lecturas: number;
+};
+
+type BuildProcesoPayloadOptions = {
+  includeLecturasDetalle?: boolean;
+};
+
+type ProcesoPayloadCacheEntry = {
+  expiresAt: number;
+  data: ProcesoLecturasPayload;
+};
+
+const PROCESO_PAYLOAD_CACHE_TTL_MS = Number(process.env.PROCESO_PAYLOAD_CACHE_TTL_MS ?? 8_000);
+const PROCESO_PAYLOAD_CACHE_MAX_ENTRIES = 150;
+const procesoPayloadCache = new Map<string, ProcesoPayloadCacheEntry>();
+
 function normalizeRangeQuery(rawQuery: any) {
   return rangeQuerySchema.parse({
     sensorInstaladoId: rawQuery.sensorInstaladoId ?? rawQuery.id_sensor_instalado ?? rawQuery.sensor_instalado_id,
@@ -48,10 +101,99 @@ function toDate(value: unknown): Date | null {
   return date;
 }
 
+function normalizeBoolean(value: unknown, defaultValue = true): boolean {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'si', 'sí', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function buildScopeSignature(scope?: RequestScope): string {
+  if (!scope) return 'public';
+
+  const organizations = [...scope.allowedOrganizationIds].sort((a, b) => a - b).join(',');
+  const branches = [...scope.allowedBranchIds].sort((a, b) => a - b).join(',');
+  const facilities = [...scope.allowedFacilityIds].sort((a, b) => a - b).join(',');
+
+  return [
+    `u:${scope.idUsuario}`,
+    `rol:${scope.role}`,
+    `idRol:${scope.idRol}`,
+    `org:${organizations}`,
+    `suc:${branches}`,
+    `ins:${facilities}`,
+  ].join('|');
+}
+
+function buildProcesoPayloadCacheKey(
+  procesoId: number,
+  from: string | undefined,
+  to: string | undefined,
+  scope: RequestScope | undefined,
+  includeLecturasDetalle: boolean
+): string {
+  const scopeSignature = buildScopeSignature(scope);
+  return `${procesoId}|${from || ''}|${to || ''}|detalle:${includeLecturasDetalle ? '1' : '0'}|${scopeSignature}`;
+}
+
+function pruneExpiredProcesoPayloadCache(now = Date.now()): void {
+  for (const [key, entry] of procesoPayloadCache.entries()) {
+    if (entry.expiresAt <= now) {
+      procesoPayloadCache.delete(key);
+    }
+  }
+}
+
+function getCachedProcesoPayload(cacheKey: string): ProcesoLecturasPayload | null {
+  const entry = procesoPayloadCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    procesoPayloadCache.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
+
+function setProcesoPayloadCache(cacheKey: string, payload: ProcesoLecturasPayload): void {
+  if (PROCESO_PAYLOAD_CACHE_TTL_MS <= 0) return;
+
+  const now = Date.now();
+  pruneExpiredProcesoPayloadCache(now);
+
+  while (procesoPayloadCache.size >= PROCESO_PAYLOAD_CACHE_MAX_ENTRIES) {
+    const oldestKey = procesoPayloadCache.keys().next().value;
+    if (!oldestKey) break;
+    procesoPayloadCache.delete(oldestKey);
+  }
+
+  procesoPayloadCache.set(cacheKey, {
+    expiresAt: now + PROCESO_PAYLOAD_CACHE_TTL_MS,
+    data: payload,
+  });
+}
+
+function createEmptyProcesoPayload(
+  procesoId: number,
+  from?: string,
+  to?: string
+): ProcesoLecturasPayload {
+  return {
+    lecturas: [],
+    parametros: [],
+    proceso_id: procesoId,
+    periodo: { inicio: from || '', fin: to || '' },
+    total_lecturas: 0,
+  };
+}
+
 async function canAccessSensorInstalado(scope: RequestScope, sensorInstaladoId: number): Promise<boolean> {
   const sensor = await prisma.sensor_instalado.findUnique({
     where: { id_sensor_instalado: sensorInstaladoId },
-    include: {
+    select: {
+      id_instalacion: true,
       instalacion: {
         select: {
           id_organizacion_sucursal: true,
@@ -61,6 +203,7 @@ async function canAccessSensorInstalado(scope: RequestScope, sensorInstaladoId: 
   });
 
   if (!sensor) return false;
+  if (typeof sensor.id_instalacion !== 'number') return false;
   return canAccessFacility(scope, sensor.id_instalacion, sensor.instalacion?.id_organizacion_sucursal);
 }
 
@@ -68,8 +211,23 @@ async function buildProcesoLecturasPayload(
   procesoId: number,
   from?: string,
   to?: string,
-  scope?: RequestScope
-) {
+  scope?: RequestScope,
+  options: BuildProcesoPayloadOptions = {}
+): Promise<ProcesoLecturasPayload> {
+  const includeLecturasDetalle = options.includeLecturasDetalle ?? true;
+  const shouldUseCache = !includeLecturasDetalle;
+  const cacheKey = buildProcesoPayloadCacheKey(
+    procesoId,
+    from,
+    to,
+    scope,
+    includeLecturasDetalle
+  );
+  if (shouldUseCache) {
+    const cachedPayload = getCachedProcesoPayload(cacheKey);
+    if (cachedPayload) return cachedPayload;
+  }
+
   const whereInstalaciones: any = { id_proceso: procesoId };
   if (scope) {
     const scopeWhere = buildInstalacionScopeWhere(scope);
@@ -90,21 +248,27 @@ async function buildProcesoLecturasPayload(
   const instalacionIds = instalaciones.map((instalacion) => instalacion.id_instalacion);
 
   if (instalacionIds.length === 0) {
-    return {
-      lecturas: [],
-      parametros: [],
-      proceso_id: procesoId,
-      periodo: { inicio: from || '', fin: to || '' },
-      total_lecturas: 0,
-    };
+    const emptyPayload = createEmptyProcesoPayload(procesoId, from, to);
+    if (shouldUseCache) {
+      setProcesoPayloadCache(cacheKey, emptyPayload);
+    }
+    return emptyPayload;
   }
 
   const sensores = await prisma.sensor_instalado.findMany({
     where: {
       id_instalacion: { in: instalacionIds },
     },
-    include: {
-      catalogo_sensores: true,
+    select: {
+      id_sensor_instalado: true,
+      id_sensor: true,
+      id_instalacion: true,
+      catalogo_sensores: {
+        select: {
+          nombre: true,
+          unidad_medida: true,
+        },
+      },
     },
   });
 
@@ -115,13 +279,11 @@ async function buildProcesoLecturasPayload(
   const sensorIds = sensores.map((sensor) => sensor.id_sensor_instalado);
 
   if (sensorIds.length === 0) {
-    return {
-      lecturas: [],
-      parametros: [],
-      proceso_id: procesoId,
-      periodo: { inicio: from || '', fin: to || '' },
-      total_lecturas: 0,
-    };
+    const emptyPayload = createEmptyProcesoPayload(procesoId, from, to);
+    if (shouldUseCache) {
+      setProcesoPayloadCache(cacheKey, emptyPayload);
+    }
+    return emptyPayload;
   }
 
   const where: any = {
@@ -139,84 +301,114 @@ async function buildProcesoLecturasPayload(
 
   const lecturasRaw = await prisma.lectura.findMany({
     where,
+    select: {
+      id_lectura: true,
+      id_sensor_instalado: true,
+      valor: true,
+      fecha: true,
+      hora: true,
+    },
     orderBy: [
       { fecha: 'desc' },
       { hora: 'desc' },
     ],
   });
 
-  const lecturas = lecturasRaw.map((lectura) => {
-    const sensor = sensorById.get(lectura.id_sensor_instalado);
-    const instalacionId = sensor?.id_instalacion;
-    const sensorName = sensor?.catalogo_sensores?.nombre ?? `Sensor ${lectura.id_sensor_instalado}`;
-    const unidad = sensor?.catalogo_sensores?.unidad_medida ?? undefined;
+  type ParametroAccumulator = ParametroMonitoreoResponse & {
+    _sum: number;
+    _count: number;
+  };
 
-    return {
-      id_lectura: lectura.id_lectura,
-      id_sensor_instalado: lectura.id_sensor_instalado,
-      valor: Number(lectura.valor),
-      fecha: lectura.fecha,
-      hora: lectura.hora,
-      timestamp: combineFechaHoraISO(lectura.fecha as Date, lectura.hora as Date),
-      id_instalacion: instalacionId,
-      nombre_instalacion: instalacionId ? instalacionById.get(instalacionId) : undefined,
-      nombre_sensor: sensorName,
-      tipo_sensor: sensorName,
-      unidad_medida: unidad,
-    };
-  });
+  const lecturas: ProcesoLecturaResponse[] = [];
+  const parametroMap = new Map<number, ParametroAccumulator>();
 
-  const parametroMap = new Map<number, any>();
-
-  for (const lectura of lecturas) {
+  for (const lectura of lecturasRaw) {
     const sensor = sensorById.get(lectura.id_sensor_instalado);
     if (!sensor) continue;
 
-    const key = sensor.id_sensor;
-    const nombreParametro = sensor.catalogo_sensores?.nombre ?? `Sensor ${sensor.id_sensor}`;
+    const valor = Number(lectura.valor);
+    const timestamp = combineFechaHoraISO(lectura.fecha as Date, lectura.hora as Date);
+    const instalacionId = typeof sensor.id_instalacion === 'number' ? sensor.id_instalacion : undefined;
+    const sensorName = sensor.catalogo_sensores?.nombre ?? `Sensor ${lectura.id_sensor_instalado}`;
     const unidadMedida = sensor.catalogo_sensores?.unidad_medida ?? '';
 
-    if (!parametroMap.has(key)) {
-      parametroMap.set(key, {
-        id_parametro: key,
-        nombre_parametro: nombreParametro,
-        unidad_medida: unidadMedida,
-        valor_actual: lectura.valor,
-        estado: 'normal',
-        ultima_lectura: lectura.timestamp,
-        promedio: lectura.valor,
-        alertas_count: 0,
-        lecturas: [],
+    if (includeLecturasDetalle) {
+      lecturas.push({
+        id_lectura: lectura.id_lectura,
+        id_sensor_instalado: lectura.id_sensor_instalado,
+        valor,
+        fecha: lectura.fecha,
+        hora: lectura.hora,
+        timestamp,
+        id_instalacion: instalacionId,
+        nombre_instalacion: instalacionId ? instalacionById.get(instalacionId) : undefined,
+        nombre_sensor: sensorName,
+        tipo_sensor: sensorName,
+        unidad_medida: unidadMedida || undefined,
       });
     }
 
-    const current = parametroMap.get(key);
-    current.lecturas.push({
-      valor: lectura.valor,
-      timestamp: lectura.timestamp,
+    const key = sensor.id_sensor;
+    let parametro = parametroMap.get(key);
+
+    if (!parametro) {
+      parametro = {
+        id_parametro: key,
+        nombre_parametro: sensor.catalogo_sensores?.nombre ?? `Sensor ${sensor.id_sensor}`,
+        unidad_medida: unidadMedida,
+        valor_actual: valor,
+        estado: 'normal',
+        ultima_lectura: timestamp,
+        promedio: 0,
+        alertas_count: 0,
+        lecturas: [],
+        _sum: 0,
+        _count: 0,
+      };
+      parametroMap.set(key, parametro);
+    }
+
+    parametro._sum += valor;
+    parametro._count += 1;
+    parametro.lecturas.push({
+      valor,
+      timestamp,
       estado: 'normal',
     });
+
+    if (parametro._count === 1) {
+      parametro.valor_actual = valor;
+      parametro.ultima_lectura = timestamp;
+    }
   }
 
-  const parametros = Array.from(parametroMap.values()).map((parametro) => {
-    const values = parametro.lecturas.map((item: any) => Number(item.valor));
-    const promedio = values.length > 0
-      ? values.reduce((sum: number, value: number) => sum + value, 0) / values.length
-      : 0;
-
+  const parametros: ParametroMonitoreoResponse[] = Array.from(parametroMap.values()).map((parametro) => {
+    const promedio = parametro._count > 0 ? parametro._sum / parametro._count : 0;
     return {
-      ...parametro,
+      id_parametro: parametro.id_parametro,
+      nombre_parametro: parametro.nombre_parametro,
+      unidad_medida: parametro.unidad_medida,
+      valor_actual: parametro.valor_actual,
+      estado: parametro.estado,
+      ultima_lectura: parametro.ultima_lectura,
       promedio: Number(promedio.toFixed(2)),
+      alertas_count: parametro.alertas_count,
+      lecturas: parametro.lecturas,
     };
   });
 
-  return {
+  const payload: ProcesoLecturasPayload = {
     lecturas,
     parametros,
     proceso_id: procesoId,
     periodo: { inicio: from || '', fin: to || '' },
-    total_lecturas: lecturas.length,
+    total_lecturas: lecturasRaw.length,
   };
+
+  if (shouldUseCache) {
+    setProcesoPayloadCache(cacheKey, payload);
+  }
+  return payload;
 }
 
 export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
@@ -285,12 +477,20 @@ export async function getLecturasProceso(req: FastifyRequest, reply: FastifyRepl
     const procesoId = toPositiveInt(query.proceso ?? query.id_proceso);
     const from = query.from ?? query.desde ?? query.fecha_inicio;
     const to = query.to ?? query.hasta ?? query.fecha_fin;
+    const includeLecturasDetalle = normalizeBoolean(
+      query.include_lecturas ?? query.includeLecturas,
+      true
+    );
 
     if (!procesoId) {
       return reply.status(400).send({ error: 'Parámetro proceso o id_proceso es obligatorio' });
     }
 
-    const payload = await buildProcesoLecturasPayload(procesoId, from, to, scope);
+    const payload = await buildProcesoLecturasPayload(procesoId, from, to, scope, {
+      includeLecturasDetalle,
+    });
+    reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+    reply.header('Vary', 'Authorization, Cookie');
     return reply.send(payload);
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -306,12 +506,20 @@ export async function getLecturasPorProceso(req: FastifyRequest, reply: FastifyR
     const procesoId = toPositiveInt(query.id_proceso ?? query.proceso);
     const from = query.fecha_inicio ?? query.from ?? query.desde;
     const to = query.fecha_fin ?? query.to ?? query.hasta;
+    const includeLecturasDetalle = normalizeBoolean(
+      query.include_lecturas ?? query.includeLecturas,
+      true
+    );
 
     if (!procesoId) {
       return reply.status(400).send({ error: 'ID de proceso requerido' });
     }
 
-    const payload = await buildProcesoLecturasPayload(procesoId, from, to, scope);
+    const payload = await buildProcesoLecturasPayload(procesoId, from, to, scope, {
+      includeLecturasDetalle,
+    });
+    reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+    reply.header('Vary', 'Authorization, Cookie');
     return reply.send({
       lecturas: payload.lecturas,
       parametros: payload.parametros,

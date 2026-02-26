@@ -4,6 +4,13 @@ import * as userController from '../controllers/usuario.controller.js';
 export async function registerUsuarioRoutes(app: FastifyInstance) {
   // Usuarios
   app.post('/api/login', userController.login);
+  app.post('/api/auth/login', userController.login);
+  app.post('/api/auth/register', userController.register);
+  app.post('/api/auth/refresh', userController.refreshToken);
+  app.post('/api/auth/forgot-password', userController.forgotPassword);
+  app.post('/api/auth/reset-password', userController.resetPassword);
+  app.get('/api/auth/me', userController.getMe);
+  app.post('/api/auth/logout', userController.logout);
   app.post('/api/usuarios', userController.createUsuario);
   app.get('/api/usuarios', userController.getUsuarios);
   app.get('/api/usuarios/:id', userController.getUsuarioById);
@@ -32,6 +39,11 @@ export async function registerUsuarioRoutes(app: FastifyInstance) {
   // Alertas
   app.post('/api/alertas', userController.createAlerta);
   app.get('/api/alertas', userController.getAlertas);
+  app.put('/api/alertas/read-all', userController.markAllAlertasRead);
+  app.patch('/api/alertas/read-all', userController.markAllAlertasRead);
+  app.post('/api/alertas/delete-all', userController.deleteAllAlertas);
+  app.put('/api/alertas/:id/read', userController.markAlertaRead);
+  app.patch('/api/alertas/:id/read', userController.markAlertaRead);
   app.get('/api/alertas/:id', userController.getAlertaById);
   app.put('/api/alertas/:id', userController.updateAlerta);
   app.delete('/api/alertas/:id', userController.deleteAlerta);

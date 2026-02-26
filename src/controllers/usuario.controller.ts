@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../repositories/prisma.js';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { normalizeOrganizacionSucursalId } from '../utils/normalize.utils.js';
 import {
   canAccessBranch,
@@ -14,6 +15,7 @@ import {
 } from '../utils/access-control.js';
 import { sendAlertToTelegram } from '../services/telegram.service.js';
 import { broadcastNotification } from '../services/ws.lecturas.server.js';
+import { sendPasswordRecoveryInstructions } from '../services/password-recovery.service.js';
 
 const HASH_ROUNDS = 10;
 
@@ -59,6 +61,17 @@ function toInt(value: unknown): number | null {
   return parsed > 0 ? parsed : null;
 }
 
+function parseBoolean(value: unknown, defaultValue = false): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'si', 'sí', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  }
+  return defaultValue;
+}
+
 function parseNumberArray(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
 
@@ -73,6 +86,46 @@ function uniqueNumbers(values: number[]): number[] {
 
 function randomPassword(): string {
   return `TmpAqua${Math.random().toString(36).slice(2, 10)}!9`;
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function getClientIp(req: FastifyRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0]?.trim() || 'unknown';
+  }
+
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return realIp.trim();
+  }
+
+  return req.ip || 'unknown';
+}
+
+function validatePasswordStrength(password: string): string[] {
+  const errors: string[] = [];
+  if (password.length < 8) errors.push('La contraseña debe tener al menos 8 caracteres');
+  if (!/[A-Z]/.test(password)) errors.push('La contraseña debe contener al menos una letra mayúscula');
+  if (!/[a-z]/.test(password)) errors.push('La contraseña debe contener al menos una letra minúscula');
+  if (!/\d/.test(password)) errors.push('La contraseña debe contener al menos un número');
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    errors.push('La contraseña debe contener al menos un carácter especial');
+  }
+  return errors;
+}
+
+function buildRecoveryToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getRecoveryExpirationDate(): Date {
+  const expiration = new Date();
+  expiration.setHours(expiration.getHours() + 1);
+  return expiration;
 }
 
 function normalizeRoleAlias(value: string): string {
@@ -569,6 +622,262 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
   }
 }
 
+export async function register(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const nombre = String(body.nombre ?? body.nombre_completo ?? body.name ?? '').trim();
+    const correo = String(body.email ?? body.correo ?? '').trim().toLowerCase();
+    const password = String(body.password ?? '').trim();
+
+    if (!nombre || !correo || !password) {
+      return reply.status(400).send({ error: 'nombre, correo y password son obligatorios' });
+    }
+
+    if (!isValidEmail(correo)) {
+      return reply.status(400).send({ error: 'Formato de email inválido' });
+    }
+
+    const passwordErrors = validatePasswordStrength(password);
+    if (passwordErrors.length > 0) {
+      return reply.status(400).send({ error: 'Contraseña inválida', details: passwordErrors });
+    }
+
+    const exists = await prisma.usuario.findUnique({
+      where: { correo },
+      select: { id_usuario: true },
+    });
+
+    if (exists) {
+      return reply.status(409).send({ error: 'Ya existe un usuario con ese correo' });
+    }
+
+    const role = await resolveRoleRecord('standard', prisma);
+    const passwordHash = await bcrypt.hash(password, HASH_ROUNDS);
+
+    const created = await prisma.usuario.create({
+      data: {
+        id_rol: role.id,
+        nombre_completo: nombre,
+        correo,
+        telefono: null,
+        password_hash: passwordHash,
+        estado: 'activo',
+      },
+    });
+
+    const usuario = await getUsuarioWithRelations(prisma, created.id_usuario);
+    if (!usuario) {
+      return reply.status(500).send({ error: 'No fue posible recuperar el usuario creado' });
+    }
+
+    const frontendRole = mapDbRoleToFrontendRole(usuario.tipo_rol?.nombre);
+    const token = req.server.jwt.sign({
+      id_usuario: usuario.id_usuario,
+      id_rol: usuario.id_rol,
+      email: usuario.correo,
+      role: frontendRole,
+    });
+
+    return reply.status(201).send({ token, usuario: serializeUsuario(usuario) });
+  } catch (error: any) {
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
+  }
+}
+
+export async function refreshToken(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const bodyToken = typeof body.token === 'string' ? body.token.trim() : '';
+    const authHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const token = bodyToken || bearerToken;
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Token requerido' });
+    }
+
+    let decoded: Record<string, unknown>;
+    try {
+      decoded = req.server.jwt.verify(token) as Record<string, unknown>;
+    } catch {
+      return reply.status(401).send({ error: 'Token inválido o expirado' });
+    }
+
+    const idUsuario = toInt(decoded.id_usuario ?? decoded.idUsuario ?? decoded.sub);
+    if (!idUsuario) {
+      return reply.status(401).send({ error: 'Token inválido' });
+    }
+
+    const usuario = await getUsuarioWithRelations(prisma, idUsuario);
+    if (!usuario || usuario.estado !== 'activo') {
+      return reply.status(401).send({ error: 'Usuario inválido para refrescar token' });
+    }
+
+    const frontendRole = mapDbRoleToFrontendRole(usuario.tipo_rol?.nombre);
+    const newToken = req.server.jwt.sign({
+      id_usuario: usuario.id_usuario,
+      id_rol: usuario.id_rol,
+      email: usuario.correo,
+      role: frontendRole,
+    });
+
+    return reply.send({ token: newToken });
+  } catch (error: any) {
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
+  }
+}
+
+export async function forgotPassword(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const correo = String(body.correo ?? body.email ?? '').trim().toLowerCase();
+
+    if (!correo) {
+      return reply.status(400).send({ error: 'Email es requerido' });
+    }
+
+    if (!isValidEmail(correo)) {
+      return reply.status(400).send({ error: 'Formato de email inválido' });
+    }
+
+    const user = await prisma.usuario.findFirst({
+      where: { correo, estado: 'activo' },
+      select: { id_usuario: true, nombre_completo: true },
+    });
+
+    let deliveryDebug: { ok: boolean; channel: string; error?: string } | null = null;
+
+    if (user) {
+      const recoveryToken = buildRecoveryToken();
+      const expirationDate = getRecoveryExpirationDate();
+
+      await prisma.token_recuperacion.deleteMany({
+        where: { id_usuario: user.id_usuario },
+      });
+
+      await prisma.token_recuperacion.create({
+        data: {
+          id_usuario: user.id_usuario,
+          token: recoveryToken,
+          expiracion: expirationDate,
+        },
+      });
+
+      console.log(`[RECOVERY] Token para ${correo}: ${recoveryToken}`);
+      console.log(`[RECOVERY] Expira: ${expirationDate}`);
+
+      const delivery = await sendPasswordRecoveryInstructions({
+        email: correo,
+        userName: user.nombre_completo,
+        token: recoveryToken,
+      });
+
+      deliveryDebug = {
+        ok: delivery.ok,
+        channel: delivery.channel,
+        error: delivery.error,
+      };
+
+      if (!delivery.ok) {
+        console.warn('[RECOVERY] No se pudo enviar enlace por email/telegram:', delivery.error);
+      } else {
+        console.log(`[RECOVERY] Enlace enviado por ${delivery.channel} para ${correo}`);
+      }
+
+      console.info(`[SECURITY] Password recovery requested for user ${user.id_usuario} from ${getClientIp(req)}`);
+    }
+
+    return reply.send({
+      success: true,
+      message: 'Si el email existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña.',
+      ...(process.env.NODE_ENV !== 'production' && deliveryDebug ? { debugDelivery: deliveryDebug } : {}),
+    });
+  } catch (error: any) {
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
+  }
+}
+
+export async function resetPassword(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const token = String(body.token ?? '').trim();
+    const newPassword = String(body.newPassword ?? body.password ?? '').trim();
+    const confirmPassword = String(body.confirmPassword ?? body.passwordConfirm ?? '').trim();
+
+    if (!token || !newPassword || !confirmPassword) {
+      return reply.status(400).send({ error: 'Token, nueva contraseña y confirmación son requeridos' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return reply.status(400).send({ error: 'Las contraseñas no coinciden' });
+    }
+
+    const passwordErrors = validatePasswordStrength(newPassword);
+    if (passwordErrors.length > 0) {
+      return reply.status(400).send({ error: 'Contraseña inválida', details: passwordErrors });
+    }
+
+    const tokenRow = await prisma.token_recuperacion.findFirst({
+      where: {
+        token,
+        expiracion: {
+          gt: new Date(),
+        },
+      },
+      include: { usuario: true },
+    });
+
+    if (!tokenRow || tokenRow.usuario.estado !== 'activo') {
+      return reply.status(400).send({ error: 'Token inválido o expirado' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, HASH_ROUNDS);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.usuario.update({
+        where: { id_usuario: tokenRow.id_usuario },
+        data: { password_hash: passwordHash },
+      });
+
+      await tx.token_recuperacion.delete({
+        where: { id_token: tokenRow.id_token },
+      });
+    });
+
+    console.info(`[SECURITY] Password changed for user ${tokenRow.id_usuario} from ${getClientIp(req)}`);
+
+    return reply.send({
+      success: true,
+      message: 'Contraseña restablecida exitosamente',
+    });
+  } catch (error: any) {
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
+  }
+}
+
+export async function getMe(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const scope = await requireRequestScope(req, reply);
+    if (!scope) return;
+
+    const usuario = await getUsuarioWithRelations(prisma, scope.idUsuario);
+    if (!usuario) {
+      return reply.status(404).send({ error: 'Usuario no encontrado' });
+    }
+
+    return reply.send({ usuario: serializeUsuario(usuario) });
+  } catch (error: any) {
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
+  }
+}
+
+export async function logout(_req: FastifyRequest, reply: FastifyReply) {
+  return reply.send({
+    success: true,
+    message: 'Sesión cerrada',
+  });
+}
+
 export async function getUsuarios(
   req: FastifyRequest<{ Querystring: { rol?: string; estado?: string; id_rol?: string } }>,
   reply: FastifyReply
@@ -766,6 +1075,14 @@ export async function deleteUsuario(req: FastifyRequest<{ Params: { id: string }
     }
 
     const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return reply.status(400).send({ error: 'ID de usuario inválido' });
+    }
+
+    if (scope.idUsuario === id) {
+      return reply.status(403).send({ error: 'No puede eliminar su propia cuenta' });
+    }
+
     const target = await getUsuarioWithRelations(prisma, id);
     if (!target) {
       return reply.status(404).send({ error: 'Usuario no encontrado' });
@@ -780,6 +1097,10 @@ export async function deleteUsuario(req: FastifyRequest<{ Params: { id: string }
     }
 
     await prisma.$transaction(async (tx) => {
+      await tx.token_recuperacion.deleteMany({
+        where: { id_usuario: id },
+      });
+
       await tx.asignacion_usuario.deleteMany({
         where: { id_usuario: id },
       });
@@ -967,6 +1288,9 @@ type AlertaWithRelations = Prisma.alertasGetPayload<{
 function serializeAlerta(alerta: AlertaWithRelations) {
   const parameter = alerta.sensor_instalado.catalogo_sensores?.nombre;
   const valor = Number(alerta.dato_puntual);
+  const isRead = Boolean(alerta.leida);
+  const fechaAlerta = alerta.fecha_alerta ? alerta.fecha_alerta.toISOString() : new Date().toISOString();
+  const fechaLectura = alerta.fecha_lectura ? alerta.fecha_lectura.toISOString() : null;
 
   return {
     id_alertas: alerta.id_alertas,
@@ -980,8 +1304,11 @@ function serializeAlerta(alerta: AlertaWithRelations) {
     parameter,
     tipo_alerta: 'critica',
     estado_alerta: 'activa',
-    read: false,
-    fecha: new Date().toISOString(),
+    read: isRead,
+    leida: isRead,
+    fecha: fechaAlerta,
+    fecha_alerta: fechaAlerta,
+    fecha_lectura: fechaLectura,
     instalacion: alerta.instalacion,
     sensor_instalado: alerta.sensor_instalado,
   };
@@ -1001,7 +1328,10 @@ async function fetchAlertaWithRelations(id: number): Promise<AlertaWithRelations
   });
 }
 
-function emitAlertaNotification(type: 'alerta.created' | 'alerta.updated' | 'alerta.deleted', data: any) {
+function emitAlertaNotification(
+  type: 'alerta.created' | 'alerta.updated' | 'alerta.deleted' | 'alertas.read-all' | 'alertas.deleted.bulk',
+  data: any,
+) {
   broadcastNotification({ type, data });
 }
 
@@ -1088,7 +1418,7 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
 
     emitAlertaNotification('alerta.created', payload);
 
-    void sendAlertToTelegram({
+    const telegramResult = await sendAlertToTelegram({
       id_alertas: payload.id_alertas,
       descripcion: payload.descripcion,
       dato_puntual: payload.dato_puntual,
@@ -1105,7 +1435,17 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
             unidad_medida: payload.sensor_instalado.catalogo_sensores?.unidad_medida || undefined,
           }
         : undefined,
-    }).catch(() => undefined);
+    });
+
+    if (!telegramResult.ok) {
+      req.log.warn(
+        {
+          alertaId: payload.id_alertas,
+          error: telegramResult.error,
+        },
+        'No fue posible enviar alerta a Telegram',
+      );
+    }
 
     reply.status(201).send(payload);
   } catch (error: any) {
@@ -1114,14 +1454,14 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function getAlertas(
-  req: FastifyRequest<{ Querystring: { id_instalacion?: string; id_sensor_instalado?: string } }>,
+  req: FastifyRequest<{ Querystring: { id_instalacion?: string; id_sensor_instalado?: string; read?: string } }>,
   reply: FastifyReply
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
     if (!scope) return;
 
-    const { id_instalacion, id_sensor_instalado } = req.query;
+    const { id_instalacion, id_sensor_instalado, read } = req.query;
     const filters: Prisma.alertasWhereInput[] = [];
 
     const instalacionId = toInt(id_instalacion);
@@ -1129,6 +1469,10 @@ export async function getAlertas(
 
     const sensorId = toInt(id_sensor_instalado);
     if (sensorId) filters.push({ id_sensor_instalado: sensorId });
+
+    if (read !== undefined) {
+      filters.push({ leida: parseBoolean(read, false) });
+    }
 
     const scopeFilter = buildAlertasScopeFilter(scope);
     if (Object.keys(scopeFilter).length > 0) {
@@ -1157,6 +1501,177 @@ export async function getAlertas(
     reply.send(alertas.map(serializeAlerta));
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
+  }
+}
+
+export async function markAlertaRead(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  try {
+    const scope = await requireRequestScope(req, reply);
+    if (!scope) return;
+
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return reply.status(400).send({ error: 'ID de alerta inválido' });
+    }
+
+    const existing = await fetchAlertaWithRelations(id);
+    if (!existing) {
+      return reply.status(404).send({ error: 'Alerta no encontrada' });
+    }
+
+    if (!canAccessFacility(scope, existing.id_instalacion, existing.instalacion?.id_organizacion_sucursal)) {
+      return reply.status(403).send({ error: 'No tiene acceso a esta alerta' });
+    }
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const read = parseBoolean(body.read ?? body.leida, true);
+    const now = new Date();
+
+    await prisma.alertas.update({
+      where: { id_alertas: id },
+      data: {
+        leida: read,
+        fecha_lectura: read ? now : null,
+      },
+    });
+
+    const alerta = await fetchAlertaWithRelations(id);
+    if (!alerta) {
+      return reply.status(404).send({ error: 'Alerta no encontrada' });
+    }
+
+    const payload = serializeAlerta(alerta);
+    emitAlertaNotification('alerta.updated', payload);
+    reply.send(payload);
+  } catch (error: any) {
+    reply.status(400).send({ error: error.message });
+  }
+}
+
+type MarkAllAlertasBody = {
+  read?: boolean | string | number;
+  leida?: boolean | string | number;
+  ids?: unknown[];
+  id_instalacion?: string | number;
+};
+
+export async function markAllAlertasRead(req: FastifyRequest<{ Body: MarkAllAlertasBody }>, reply: FastifyReply) {
+  try {
+    const scope = await requireRequestScope(req, reply);
+    if (!scope) return;
+
+    const body = (req.body || {}) as MarkAllAlertasBody;
+    const read = parseBoolean(body.read ?? body.leida, true);
+    const ids = uniqueNumbers(parseNumberArray(body.ids));
+    const idInstalacion = toInt(body.id_instalacion);
+
+    const filters: Prisma.alertasWhereInput[] = [];
+
+    if (ids.length > 0) {
+      filters.push({ id_alertas: { in: ids } });
+    }
+
+    if (idInstalacion) {
+      filters.push({ id_instalacion: idInstalacion });
+    }
+
+    const scopeFilter = buildAlertasScopeFilter(scope);
+    if (Object.keys(scopeFilter).length > 0) {
+      filters.push(scopeFilter);
+    }
+
+    const where: Prisma.alertasWhereInput = filters.length > 1
+      ? { AND: filters }
+      : (filters[0] ?? {});
+
+    const targets = await prisma.alertas.findMany({
+      where,
+      select: { id_alertas: true },
+    });
+
+    if (targets.length === 0) {
+      return reply.send({ updated: 0, read, ids: [] as number[] });
+    }
+
+    const targetIds = targets.map((item) => item.id_alertas);
+    const now = new Date();
+
+    await prisma.alertas.updateMany({
+      where: { id_alertas: { in: targetIds } },
+      data: {
+        leida: read,
+        fecha_lectura: read ? now : null,
+      },
+    });
+
+    emitAlertaNotification('alertas.read-all', {
+      ids: targetIds,
+      read,
+      fecha_lectura: read ? now.toISOString() : null,
+    });
+
+    reply.send({ updated: targetIds.length, read, ids: targetIds });
+  } catch (error: any) {
+    reply.status(400).send({ error: error.message });
+  }
+}
+
+type DeleteAllAlertasBody = {
+  ids?: unknown[];
+  id_instalacion?: string | number;
+};
+
+export async function deleteAllAlertas(req: FastifyRequest<{ Body: DeleteAllAlertasBody }>, reply: FastifyReply) {
+  try {
+    const scope = await requireRequestScope(req, reply);
+    if (!scope) return;
+    if (!canManageResources(scope)) {
+      return reply.status(403).send({ error: 'No tiene permisos para eliminar alertas' });
+    }
+
+    const body = (req.body || {}) as DeleteAllAlertasBody;
+    const ids = uniqueNumbers(parseNumberArray(body.ids));
+    const idInstalacion = toInt(body.id_instalacion);
+
+    const filters: Prisma.alertasWhereInput[] = [];
+
+    if (ids.length > 0) {
+      filters.push({ id_alertas: { in: ids } });
+    }
+
+    if (idInstalacion) {
+      filters.push({ id_instalacion: idInstalacion });
+    }
+
+    const scopeFilter = buildAlertasScopeFilter(scope);
+    if (Object.keys(scopeFilter).length > 0) {
+      filters.push(scopeFilter);
+    }
+
+    const where: Prisma.alertasWhereInput = filters.length > 1
+      ? { AND: filters }
+      : (filters[0] ?? {});
+
+    const targets = await prisma.alertas.findMany({
+      where,
+      select: { id_alertas: true },
+    });
+
+    if (targets.length === 0) {
+      return reply.send({ deleted: 0, ids: [] as number[] });
+    }
+
+    const targetIds = targets.map((item) => item.id_alertas);
+
+    await prisma.alertas.deleteMany({
+      where: { id_alertas: { in: targetIds } },
+    });
+
+    emitAlertaNotification('alertas.deleted.bulk', { ids: targetIds });
+
+    reply.send({ deleted: targetIds.length, ids: targetIds });
+  } catch (error: any) {
+    reply.status(400).send({ error: error.message });
   }
 }
 
@@ -1231,6 +1746,12 @@ export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } 
       if (!Number.isNaN(value)) {
         data.dato_puntual = value;
       }
+    }
+
+    if (body.read !== undefined || body.leida !== undefined) {
+      const read = parseBoolean(body.read ?? body.leida, false);
+      data.leida = read;
+      data.fecha_lectura = read ? new Date() : null;
     }
 
     await prisma.alertas.update({

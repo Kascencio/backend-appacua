@@ -22,6 +22,12 @@ function toPositiveInt(value: unknown): number | null {
   return parsed > 0 ? parsed : null;
 }
 
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function mapBooleanActivoToEstado(activo: unknown): 'activa' | 'inactiva' | undefined {
   if (activo === undefined) return undefined;
   return Boolean(activo) ? 'activa' : 'inactiva';
@@ -32,6 +38,10 @@ function serializeOrganizacion(organizacion: any) {
     ...organizacion,
     id_empresa: organizacion.id_organizacion,
     activo: organizacion.estado === 'activa',
+    latitud: toNullableNumber(organizacion.latitud),
+    longitud: toNullableNumber(organizacion.longitud),
+    nombre_estado: organizacion.estados?.nombre,
+    nombre_municipio: organizacion.municipios?.nombre,
     created_at: organizacion.fecha_creacion,
     updated_at: organizacion.ultima_modificacion,
   };
@@ -43,6 +53,14 @@ function serializeSucursal(sucursal: any) {
     id_sucursal: sucursal.id_organizacion_sucursal,
     id_empresa: sucursal.id_organizacion,
     nombre: sucursal.nombre_sucursal,
+    calle: sucursal.direccion_sucursal,
+    direccion: sucursal.direccion_sucursal,
+    telefono: sucursal.telefono_sucursal,
+    email: sucursal.correo_sucursal,
+    latitud: toNullableNumber(sucursal.latitud),
+    longitud: toNullableNumber(sucursal.longitud),
+    nombre_estado: sucursal.estados?.nombre,
+    nombre_municipio: sucursal.municipios?.nombre,
     activo: sucursal.estado === 'activa',
     created_at: sucursal.fecha_creacion,
     updated_at: sucursal.ultima_modificacion,
@@ -64,18 +82,33 @@ export async function createOrganizacion(req: FastifyRequest, reply: FastifyRepl
     const body = createOrganizacionSchema.parse({
       nombre: raw.nombre,
       estado: raw.estado ?? mapBooleanActivoToEstado(raw.activo) ?? 'activa',
-    });
-    // Convertir estado string a enum
-    const data = {
-      ...body,
-      estado: body.estado as 'activa' | 'inactiva',
       razon_social: raw.razon_social ?? raw.razonSocial,
       rfc: raw.rfc,
       correo: raw.correo ?? raw.email,
       telefono: raw.telefono ?? raw.phone,
+      direccion: raw.direccion ?? raw.direccion_completa,
+      latitud: raw.latitud ?? raw.latitude,
+      longitud: raw.longitud ?? raw.longitude,
+      zona_horaria: raw.zona_horaria ?? raw.timezone,
       descripcion: raw.descripcion,
-      id_estado: raw.id_estado ? Number(raw.id_estado) : undefined,
-      id_municipio: raw.id_municipio ? Number(raw.id_municipio) : undefined,
+      id_estado: raw.id_estado,
+      id_municipio: raw.id_municipio,
+    });
+
+    const data = {
+      estado: body.estado as 'activa' | 'inactiva',
+      nombre: body.nombre,
+      razon_social: body.razon_social,
+      rfc: body.rfc,
+      correo: body.correo,
+      telefono: body.telefono,
+      direccion: body.direccion,
+      latitud: body.latitud,
+      longitud: body.longitud,
+      zona_horaria: body.zona_horaria,
+      descripcion: body.descripcion,
+      id_estado: body.id_estado ?? undefined,
+      id_municipio: body.id_municipio ?? undefined,
     };
     const organizacion = await prisma.organizacion.create({ data });
     reply.status(201).send(serializeOrganizacion(organizacion));
@@ -186,20 +219,33 @@ export async function updateOrganizacion(req: FastifyRequest<{ Params: { id: str
     const body = updateOrganizacionSchema.parse({
       nombre: raw.nombre,
       estado: raw.estado ?? mapBooleanActivoToEstado(raw.activo),
+      razon_social: raw.razon_social ?? raw.razonSocial,
+      rfc: raw.rfc,
+      correo: raw.correo ?? raw.email,
+      telefono: raw.telefono ?? raw.phone,
+      direccion: raw.direccion ?? raw.direccion_completa,
+      latitud: raw.latitud ?? raw.latitude,
+      longitud: raw.longitud ?? raw.longitude,
+      zona_horaria: raw.zona_horaria ?? raw.timezone,
+      descripcion: raw.descripcion,
+      id_estado: raw.id_estado,
+      id_municipio: raw.id_municipio,
     });
     
-    // Convertir estado string a enum si existe
-    const data: any = { ...body };
-    if (body.estado) {
-      data.estado = body.estado as 'activa' | 'inactiva';
-    }
-    if (raw.razon_social !== undefined) data.razon_social = raw.razon_social;
-    if (raw.rfc !== undefined) data.rfc = raw.rfc;
-    if (raw.correo !== undefined || raw.email !== undefined) data.correo = raw.correo ?? raw.email;
-    if (raw.telefono !== undefined || raw.phone !== undefined) data.telefono = raw.telefono ?? raw.phone;
-    if (raw.descripcion !== undefined) data.descripcion = raw.descripcion;
-    if (raw.id_estado !== undefined) data.id_estado = toPositiveInt(raw.id_estado);
-    if (raw.id_municipio !== undefined) data.id_municipio = toPositiveInt(raw.id_municipio);
+    const data: any = {};
+    if (body.nombre !== undefined) data.nombre = body.nombre;
+    if (body.estado !== undefined) data.estado = body.estado as 'activa' | 'inactiva';
+    if (body.razon_social !== undefined) data.razon_social = body.razon_social;
+    if (body.rfc !== undefined) data.rfc = body.rfc;
+    if (body.correo !== undefined) data.correo = body.correo;
+    if (body.telefono !== undefined) data.telefono = body.telefono;
+    if (body.direccion !== undefined) data.direccion = body.direccion;
+    if (body.latitud !== undefined) data.latitud = body.latitud;
+    if (body.longitud !== undefined) data.longitud = body.longitud;
+    if (body.zona_horaria !== undefined) data.zona_horaria = body.zona_horaria;
+    if (body.descripcion !== undefined) data.descripcion = body.descripcion;
+    if (raw.id_estado !== undefined) data.id_estado = toPositiveInt(body.id_estado);
+    if (raw.id_municipio !== undefined) data.id_municipio = toPositiveInt(body.id_municipio);
     if (raw.activo !== undefined && body.estado === undefined) {
       data.estado = mapBooleanActivoToEstado(raw.activo);
     }
@@ -248,16 +294,34 @@ export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
       id_organizacion: raw.id_organizacion ?? raw.id_empresa ?? raw.id_padre,
       nombre_sucursal: raw.nombre_sucursal ?? raw.nombre,
       estado: raw.estado ?? mapBooleanActivoToEstado(raw.activo),
+      telefono_sucursal: raw.telefono_sucursal ?? raw.telefono,
+      correo_sucursal: raw.correo_sucursal ?? raw.email,
+      direccion_sucursal: raw.direccion_sucursal ?? raw.direccion ?? raw.calle,
+      numero_int_ext: raw.numero_int_ext,
+      referencia: raw.referencia,
+      id_cp: raw.id_cp,
+      id_colonia: raw.id_colonia,
+      id_estado: raw.id_estado,
+      id_municipio: raw.id_municipio,
+      latitud: raw.latitud ?? raw.latitude,
+      longitud: raw.longitud ?? raw.longitude,
     });
 
     const sucursal = await prisma.organizacion_sucursal.create({
       data: {
         id_organizacion: body.id_organizacion,
         nombre_sucursal: body.nombre_sucursal,
-        telefono_sucursal: raw.telefono_sucursal ?? raw.telefono ?? null,
-        correo_sucursal: raw.correo_sucursal ?? raw.email ?? null,
-        id_estado: toPositiveInt(raw.id_estado),
-        id_municipio: toPositiveInt(raw.id_municipio),
+        telefono_sucursal: body.telefono_sucursal ?? null,
+        correo_sucursal: body.correo_sucursal ?? null,
+        direccion_sucursal: body.direccion_sucursal ?? null,
+        numero_int_ext: body.numero_int_ext ?? null,
+        referencia: body.referencia ?? null,
+        id_cp: body.id_cp ?? null,
+        id_colonia: body.id_colonia ?? null,
+        id_estado: body.id_estado ?? null,
+        id_municipio: body.id_municipio ?? null,
+        latitud: body.latitud ?? null,
+        longitud: body.longitud ?? null,
         estado: (body.estado ?? 'activa') as 'activa' | 'inactiva'
       }
     });
@@ -362,19 +426,35 @@ export async function updateSucursal(req: FastifyRequest<{ Params: { id: string 
       id_organizacion: raw.id_organizacion ?? raw.id_empresa ?? raw.id_padre,
       nombre_sucursal: raw.nombre_sucursal ?? raw.nombre,
       estado: raw.estado ?? mapBooleanActivoToEstado(raw.activo),
+      telefono_sucursal: raw.telefono_sucursal ?? raw.telefono,
+      correo_sucursal: raw.correo_sucursal ?? raw.email,
+      direccion_sucursal: raw.direccion_sucursal ?? raw.direccion ?? raw.calle,
+      numero_int_ext: raw.numero_int_ext,
+      referencia: raw.referencia,
+      id_cp: raw.id_cp,
+      id_colonia: raw.id_colonia,
+      id_estado: raw.id_estado,
+      id_municipio: raw.id_municipio,
+      latitud: raw.latitud ?? raw.latitude,
+      longitud: raw.longitud ?? raw.longitude,
     });
 
-    const data: any = {
-      id_organizacion: body.id_organizacion,
-      nombre_sucursal: body.nombre_sucursal,
-      estado: body.estado as any
-    };
+    const data: any = {};
+    if (body.id_organizacion !== undefined) data.id_organizacion = body.id_organizacion;
+    if (body.nombre_sucursal !== undefined) data.nombre_sucursal = body.nombre_sucursal;
+    if (body.estado !== undefined) data.estado = body.estado as 'activa' | 'inactiva';
 
-    // Permitir actualizar campos extra si vienen (sin romper compatibilidad)
-    if (raw.telefono_sucursal !== undefined || raw.telefono !== undefined) data.telefono_sucursal = raw.telefono_sucursal ?? raw.telefono;
-    if (raw.correo_sucursal !== undefined || raw.email !== undefined) data.correo_sucursal = raw.correo_sucursal ?? raw.email;
-    if (raw.id_estado !== undefined) data.id_estado = toPositiveInt(raw.id_estado);
-    if (raw.id_municipio !== undefined) data.id_municipio = toPositiveInt(raw.id_municipio);
+    if (body.telefono_sucursal !== undefined) data.telefono_sucursal = body.telefono_sucursal;
+    if (body.correo_sucursal !== undefined) data.correo_sucursal = body.correo_sucursal;
+    if (body.direccion_sucursal !== undefined) data.direccion_sucursal = body.direccion_sucursal;
+    if (body.numero_int_ext !== undefined) data.numero_int_ext = body.numero_int_ext;
+    if (body.referencia !== undefined) data.referencia = body.referencia;
+    if (raw.id_cp !== undefined) data.id_cp = toPositiveInt(body.id_cp);
+    if (raw.id_colonia !== undefined) data.id_colonia = toPositiveInt(body.id_colonia);
+    if (raw.id_estado !== undefined) data.id_estado = toPositiveInt(body.id_estado);
+    if (raw.id_municipio !== undefined) data.id_municipio = toPositiveInt(body.id_municipio);
+    if (body.latitud !== undefined) data.latitud = body.latitud;
+    if (body.longitud !== undefined) data.longitud = body.longitud;
     
     const sucursal = await prisma.organizacion_sucursal.update({
       where: { id_organizacion_sucursal: id },

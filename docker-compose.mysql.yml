@@ -12,6 +12,8 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    networks:
+      - aqua-backend-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root_password_dev}"]
       interval: 10s
@@ -24,6 +26,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-aqua_user}:${MYSQL_PASSWORD:-aqua_password}@mysql:3306/${MYSQL_DATABASE:-aqua_sonda}
+    networks:
+      - aqua-backend-network
 
 volumes:
   mysql_data:
+
+networks:
+  aqua-backend-network:
+    external: true
+    name: ${DOCKER_NETWORK:-aqua-backend-network}

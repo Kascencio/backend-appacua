@@ -1,6 +1,15 @@
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS base
 
 WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV HOST=0.0.0.0
+ENV PORT=3300
+
+FROM base AS builder
 
 COPY package*.json ./
 COPY prisma ./prisma
@@ -13,13 +22,9 @@ COPY scripts ./scripts
 
 RUN npm run build
 
-FROM node:20-alpine AS runtime
-
-WORKDIR /app
+FROM base AS runtime
 
 ENV NODE_ENV=production
-ENV HOST=0.0.0.0
-ENV PORT=3300
 
 COPY package*.json ./
 COPY prisma ./prisma

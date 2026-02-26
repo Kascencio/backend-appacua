@@ -3,6 +3,13 @@ import { parseDateForPrisma } from './date.utils.js';
 
 const prismaDate = z.preprocess((v) => parseDateForPrisma(v), z.date());
 const prismaDateOptional = z.preprocess((v) => parseDateForPrisma(v), z.date().optional());
+const positiveIntNullableOptional = z.preprocess((v) => {
+  if (v === undefined || v === '') return undefined;
+  if (v === null) return null;
+  return v;
+}, z.coerce.number().int().positive().nullable().optional());
+const decimalField = z.coerce.number().finite();
+const decimalFieldOptional = decimalField.optional();
 
 // Lecturas & Agregados
 export const rangeQuerySchema = z.object({
@@ -30,7 +37,18 @@ export const wsFilterSchema = z.object({
 // CRUD Schemas - Organizacion
 export const createOrganizacionSchema = z.object({
   nombre: z.string().min(1).max(200),
-  estado: z.string().min(1).max(50)
+  estado: z.enum(['activa', 'inactiva']).optional().default('activa'),
+  razon_social: z.string().max(255).optional(),
+  rfc: z.string().max(20).optional(),
+  correo: z.string().email().max(255).optional(),
+  telefono: z.string().max(20).optional(),
+  direccion: z.string().max(255).optional(),
+  latitud: decimalFieldOptional,
+  longitud: decimalFieldOptional,
+  zona_horaria: z.string().max(60).optional(),
+  descripcion: z.string().max(2000).optional(),
+  id_estado: z.coerce.number().int().positive().optional(),
+  id_municipio: z.coerce.number().int().positive().optional(),
 });
 
 export const updateOrganizacionSchema = createOrganizacionSchema.partial();
@@ -39,7 +57,18 @@ export const updateOrganizacionSchema = createOrganizacionSchema.partial();
 export const createSucursalSchema = z.object({
   id_organizacion: z.coerce.number().int().positive(),
   nombre_sucursal: z.string().min(1).max(200),
-  estado: z.enum(['activa', 'inactiva']).optional()
+  estado: z.enum(['activa', 'inactiva']).optional(),
+  telefono_sucursal: z.string().max(20).optional(),
+  correo_sucursal: z.string().email().max(255).optional(),
+  direccion_sucursal: z.string().max(255).optional(),
+  numero_int_ext: z.string().max(30).optional(),
+  referencia: z.string().max(255).optional(),
+  id_cp: z.coerce.number().int().positive().optional(),
+  id_colonia: z.coerce.number().int().positive().optional(),
+  id_estado: z.coerce.number().int().positive().optional(),
+  id_municipio: z.coerce.number().int().positive().optional(),
+  latitud: decimalFieldOptional,
+  longitud: decimalFieldOptional,
 });
 
 export const updateSucursalSchema = createSucursalSchema.partial();
@@ -49,12 +78,25 @@ const instalacionBaseSchema = z.object({
   id_organizacion_sucursal: z.coerce.number().int().positive().optional(),
   // Alias legacy usado por algunos frontends
   id_empresa_sucursal: z.coerce.number().int().positive().optional(),
+  // Nuevo alias para permitir asignar instalación por organización.
+  id_organizacion: z.coerce.number().int().positive().optional(),
   nombre_instalacion: z.string().min(1).max(200).optional(),
+  codigo_instalacion: z.string().max(40).optional(),
   fecha_instalacion: prismaDateOptional,
   estado_operativo: z.enum(['activo', 'inactivo']).optional(),
   descripcion: z.string().min(1).max(200).optional(),
   tipo_uso: z.enum(['acuicultura', 'tratamiento', 'otros']).optional(),
-  id_proceso: z.coerce.number().int().positive().optional()
+  ubicacion: z.string().max(255).optional(),
+  latitud: decimalFieldOptional,
+  longitud: decimalFieldOptional,
+  capacidad_maxima: decimalFieldOptional,
+  capacidad_actual: decimalFieldOptional,
+  volumen_agua_m3: decimalFieldOptional,
+  profundidad_m: decimalFieldOptional,
+  fecha_ultima_inspeccion: prismaDateOptional,
+  responsable_operativo: z.string().max(120).optional(),
+  contacto_emergencia: z.string().max(40).optional(),
+  id_proceso: z.coerce.number().int().positive().optional(),
 });
 
 export const createInstalacionSchema = instalacionBaseSchema.extend({
@@ -64,8 +106,8 @@ export const createInstalacionSchema = instalacionBaseSchema.extend({
   descripcion: z.string().min(1).max(200),
   tipo_uso: z.enum(['acuicultura', 'tratamiento', 'otros']),
   id_proceso: z.coerce.number().int().positive()
-}).refine(v => v.id_organizacion_sucursal || v.id_empresa_sucursal, {
-  message: 'Debe enviar id_organizacion_sucursal o id_empresa_sucursal'
+}).refine(v => v.id_organizacion_sucursal || v.id_empresa_sucursal || v.id_organizacion, {
+  message: 'Debe enviar id_organizacion_sucursal, id_empresa_sucursal o id_organizacion'
 });
 
 export const updateInstalacionSchema = instalacionBaseSchema;
@@ -86,27 +128,38 @@ export const updateCatalogoSensorSchema = createCatalogoSensorSchema.partial();
 
 // CRUD Schemas - SensorInstalado
 export const createSensorInstaladoSchema = z.object({
-  id_instalacion: z.coerce.number().int().positive(),
+  id_instalacion: positiveIntNullableOptional,
   id_sensor: z.coerce.number().int().positive(),
   fecha_instalada: prismaDate,
   descripcion: z.string().min(1).max(50),
-  id_lectura: z.coerce.number().int().positive().optional()
+  estado_operativo: z.enum(['activo', 'inactivo', 'mantenimiento']).optional(),
+  fecha_mantenimiento: prismaDateOptional,
+  id_lectura: z.coerce.number().int().positive().optional(),
 });
 
 export const updateSensorInstaladoSchema = z.object({
-  id_instalacion: z.coerce.number().int().positive().optional(),
+  id_instalacion: positiveIntNullableOptional,
   id_sensor: z.coerce.number().int().positive().optional(),
   fecha_instalada: prismaDateOptional,
   descripcion: z.string().min(1).max(50).optional(),
-  id_lectura: z.coerce.number().int().positive().optional()
+  estado_operativo: z.enum(['activo', 'inactivo', 'mantenimiento']).optional(),
+  fecha_mantenimiento: prismaDateOptional,
+  id_lectura: z.coerce.number().int().positive().optional(),
 });
 
 // CRUD Schemas - Proceso
 export const createProcesoSchema = z.object({
   id_especie: z.coerce.number().int().positive(),
   id_instalacion: z.coerce.number().int().positive().optional(),
+  nombre_proceso: z.string().max(150).optional(),
+  descripcion: z.string().max(5000).optional(),
+  objetivos: z.string().max(5000).optional(),
+  estado: z.enum(['planificado', 'en_progreso', 'pausado', 'completado', 'cancelado']).optional(),
+  porcentaje_avance: z.coerce.number().min(0).max(100).optional(),
   fecha_inicio: prismaDate,
-  fecha_final: prismaDate
+  fecha_final: prismaDate,
+  fecha_fin_real: prismaDateOptional,
+  motivo_cierre: z.string().max(5000).optional(),
 }).refine(v => v.fecha_final > v.fecha_inicio, {
   message: 'fecha_final debe ser posterior a fecha_inicio'
 });
@@ -114,8 +167,15 @@ export const createProcesoSchema = z.object({
 export const updateProcesoSchema = z.object({
   id_especie: z.coerce.number().int().positive().optional(),
   id_instalacion: z.coerce.number().int().positive().optional(),
+  nombre_proceso: z.string().max(150).optional(),
+  descripcion: z.string().max(5000).optional(),
+  objetivos: z.string().max(5000).optional(),
+  estado: z.enum(['planificado', 'en_progreso', 'pausado', 'completado', 'cancelado']).optional(),
+  porcentaje_avance: z.coerce.number().min(0).max(100).optional(),
   fecha_inicio: prismaDateOptional,
-  fecha_final: prismaDateOptional
+  fecha_final: prismaDateOptional,
+  fecha_fin_real: prismaDateOptional,
+  motivo_cierre: z.string().max(5000).optional(),
 }).superRefine((v, ctx) => {
   if (v.fecha_inicio && v.fecha_final && v.fecha_final <= v.fecha_inicio) {
     ctx.addIssue({

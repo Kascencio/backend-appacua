@@ -11,6 +11,7 @@ import { registerOrganizacionRoutes } from './routes/organizacion.routes.js';
 import { registerInstalacionRoutes } from './routes/instalacion.routes.js';
 import { registerUsuarioRoutes } from './routes/usuario.routes.js';
 import { registerEspeciesRoutes } from './routes/especies.routes.js';
+import { registerTelegramRoutes } from './routes/telegram.routes.js';
 import { initLecturasWS } from './services/ws.lecturas.server.js';
 import { startLecturasPoller } from './services/lecturas.poller.js';
 
@@ -52,6 +53,7 @@ await registerOrganizacionRoutes(app);
 await registerInstalacionRoutes(app);
 await registerUsuarioRoutes(app);
 await registerEspeciesRoutes(app);
+await registerTelegramRoutes(app);
 
 // Register WebSocket AFTER all HTTP routes but BEFORE listen
 await initLecturasWS(app);
@@ -64,5 +66,4 @@ try {
   app.log.error(err);
   process.exit(1);
 }
-
 

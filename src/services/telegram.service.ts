@@ -1,8 +1,15 @@
 import { config } from '../config/index.js';
+import { prisma } from '../repositories/prisma.js';
 
 export type TelegramSendResult = {
   ok: boolean;
   error?: string;
+  attempted?: number;
+  delivered?: number;
+};
+
+export type TelegramSendOptions = {
+  parseMode?: 'MarkdownV2' | 'HTML' | null;
 };
 
 export type TelegramAlertPayload = {
@@ -24,6 +31,29 @@ function escapeMarkdown(text: string): string {
   return text.replace(/([_\-*\[\]()~`>#+=|{}.!])/g, '\\$1');
 }
 
+function uniqueChatIds(chatIds: string[]): string[] {
+  const values = chatIds
+    .map((chatId) => String(chatId || '').trim())
+    .filter((chatId) => chatId.length > 0);
+
+  return [...new Set(values)];
+}
+
+function buildSendMessageBody(message: string, chatId: string, options?: TelegramSendOptions): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    text: message,
+    disable_web_page_preview: true,
+  };
+
+  const parseMode = options?.parseMode === undefined ? 'MarkdownV2' : options.parseMode;
+  if (parseMode) {
+    body.parse_mode = parseMode;
+  }
+
+  return body;
+}
+
 export function buildTelegramAlertMessage(payload: TelegramAlertPayload): string {
   const instalacion = payload.instalacion?.nombre_instalacion
     ? `Instalacion: ${payload.instalacion.nombre_instalacion}`
@@ -42,28 +72,21 @@ export function buildTelegramAlertMessage(payload: TelegramAlertPayload): string
   ].join('\n');
 }
 
-export async function sendTelegramMessage(message: string, chatId?: string): Promise<TelegramSendResult> {
-  if (!config.telegramEnabled) {
-    return { ok: false, error: 'Telegram deshabilitado' };
-  }
-
+async function sendTelegramMessageToChat(
+  message: string,
+  chatId: string,
+  options?: TelegramSendOptions
+): Promise<TelegramSendResult> {
   const token = config.telegramBotToken;
-  const targetChatId = chatId || config.telegramChatId;
-
-  if (!token || !targetChatId) {
-    return { ok: false, error: 'TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados' };
+  if (!token) {
+    return { ok: false, error: 'TELEGRAM_BOT_TOKEN no configurado' };
   }
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: targetChatId,
-        text: message,
-        parse_mode: 'MarkdownV2',
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(buildSendMessageBody(message, chatId, options)),
     });
 
     const data = await response.json().catch(() => ({}));
@@ -84,7 +107,102 @@ export async function sendTelegramMessage(message: string, chatId?: string): Pro
   }
 }
 
+async function resolveTelegramAlertChatIds(): Promise<string[]> {
+  const configuredChatIds = config.telegramChatId ? [config.telegramChatId] : [];
+
+  try {
+    const subscriptions = await prisma.telegram_suscripcion.findMany({
+      where: {
+        activo: true,
+        usuario: {
+          estado: 'activo',
+        },
+      },
+      select: {
+        chat_id: true,
+      },
+    });
+
+    return uniqueChatIds([
+      ...configuredChatIds,
+      ...subscriptions.map((row) => row.chat_id),
+    ]);
+  } catch {
+    // Mantener compatibilidad mientras se aplica la migracion SQL de telegram_suscripcion
+    return uniqueChatIds(configuredChatIds);
+  }
+}
+
+export async function sendTelegramMessage(
+  message: string,
+  chatId?: string,
+  options?: TelegramSendOptions
+): Promise<TelegramSendResult> {
+  if (!config.telegramEnabled) {
+    return { ok: false, error: 'Telegram deshabilitado' };
+  }
+
+  const targetChatId = chatId || config.telegramChatId;
+
+  if (!targetChatId) {
+    return { ok: false, error: 'TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados' };
+  }
+
+  return sendTelegramMessageToChat(message, targetChatId, options);
+}
+
+export async function sendTelegramBroadcastMessage(
+  message: string,
+  chatIds: string[],
+  options?: TelegramSendOptions
+): Promise<TelegramSendResult> {
+  if (!config.telegramEnabled) {
+    return { ok: false, error: 'Telegram deshabilitado' };
+  }
+
+  const targetChatIds = uniqueChatIds(chatIds);
+  if (targetChatIds.length === 0) {
+    return { ok: false, error: 'No hay chats de Telegram verificados para enviar notificaciones' };
+  }
+
+  const results = await Promise.all(
+    targetChatIds.map((targetChatId) => sendTelegramMessageToChat(message, targetChatId, options))
+  );
+
+  const delivered = results.filter((result) => result.ok).length;
+  const attempted = targetChatIds.length;
+
+  if (delivered === 0) {
+    const firstError = results.find((result) => result.error)?.error;
+    return {
+      ok: false,
+      error: firstError || 'No se pudo enviar el mensaje a ningún chat de Telegram',
+      attempted,
+      delivered,
+    };
+  }
+
+  if (delivered < attempted) {
+    return {
+      ok: true,
+      error: `Entrega parcial en Telegram (${delivered}/${attempted})`,
+      attempted,
+      delivered,
+    };
+  }
+
+  return { ok: true, attempted, delivered };
+}
+
 export async function sendAlertToTelegram(payload: TelegramAlertPayload): Promise<TelegramSendResult> {
   const message = buildTelegramAlertMessage(payload);
-  return sendTelegramMessage(message);
+  try {
+    const chatIds = await resolveTelegramAlertChatIds();
+    return sendTelegramBroadcastMessage(message, chatIds, { parseMode: 'MarkdownV2' });
+  } catch (error: any) {
+    return {
+      ok: false,
+      error: error?.message || 'Error resolviendo destinatarios de Telegram',
+    };
+  }
 }

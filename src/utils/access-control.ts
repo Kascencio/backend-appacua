@@ -30,6 +30,15 @@ type DecodedToken = {
   sub?: unknown;
 };
 
+type RequestScopeCacheEntry = {
+  expiresAt: number;
+  scope: RequestScope;
+};
+
+const REQUEST_SCOPE_CACHE_TTL_MS = Number(process.env.REQUEST_SCOPE_CACHE_TTL_MS ?? 10_000);
+const REQUEST_SCOPE_CACHE_MAX_ENTRIES = 500;
+const requestScopeCache = new Map<string, RequestScopeCacheEntry>();
+
 function createHttpError(statusCode: number, message: string): HttpError {
   const error = new Error(message) as HttpError;
   error.statusCode = statusCode;
@@ -69,6 +78,53 @@ function toPositiveInt(value: unknown): number | null {
 
 function uniqueNumbers(values: number[]): number[] {
   return [...new Set(values)];
+}
+
+function cloneScope(scope: RequestScope): RequestScope {
+  return {
+    ...scope,
+    allowedOrganizationIds: [...scope.allowedOrganizationIds],
+    allowedBranchIds: [...scope.allowedBranchIds],
+    allowedFacilityIds: [...scope.allowedFacilityIds],
+  };
+}
+
+function pruneExpiredScopeCache(now = Date.now()): void {
+  for (const [key, entry] of requestScopeCache.entries()) {
+    if (entry.expiresAt <= now) {
+      requestScopeCache.delete(key);
+    }
+  }
+}
+
+function getCachedScope(token: string): RequestScope | null {
+  const entry = requestScopeCache.get(token);
+  if (!entry) return null;
+
+  if (entry.expiresAt <= Date.now()) {
+    requestScopeCache.delete(token);
+    return null;
+  }
+
+  return cloneScope(entry.scope);
+}
+
+function setCachedScope(token: string, scope: RequestScope): void {
+  if (REQUEST_SCOPE_CACHE_TTL_MS <= 0) return;
+
+  const now = Date.now();
+  pruneExpiredScopeCache(now);
+
+  while (requestScopeCache.size >= REQUEST_SCOPE_CACHE_MAX_ENTRIES) {
+    const oldestKey = requestScopeCache.keys().next().value;
+    if (!oldestKey) break;
+    requestScopeCache.delete(oldestKey);
+  }
+
+  requestScopeCache.set(token, {
+    expiresAt: now + REQUEST_SCOPE_CACHE_TTL_MS,
+    scope: cloneScope(scope),
+  });
 }
 
 function extractTokenFromCookie(cookieHeader: string): string | null {
@@ -117,6 +173,11 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
     throw createHttpError(401, 'Token inválido');
   }
 
+  const cachedScope = getCachedScope(token);
+  if (cachedScope && cachedScope.idUsuario === idUsuario) {
+    return cachedScope;
+  }
+
   const usuario = await prisma.usuario.findUnique({
     where: { id_usuario: idUsuario },
     include: {
@@ -134,10 +195,12 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
   });
 
   if (!usuario) {
+    requestScopeCache.delete(token);
     throw createHttpError(401, 'Usuario no encontrado');
   }
 
   if (usuario.estado !== 'activo') {
+    requestScopeCache.delete(token);
     throw createHttpError(403, 'Usuario inactivo');
   }
 
@@ -162,7 +225,7 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
       .filter((id): id is number => typeof id === 'number' && id > 0)
   );
 
-  return {
+  const scope: RequestScope = {
     idUsuario: usuario.id_usuario,
     idRol: usuario.id_rol,
     role,
@@ -171,6 +234,9 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
     allowedBranchIds,
     allowedFacilityIds,
   };
+
+  setCachedScope(token, scope);
+  return scope;
 }
 
 export async function requireRequestScope(
