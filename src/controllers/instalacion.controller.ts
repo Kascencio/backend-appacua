@@ -46,6 +46,87 @@ function resolveHttpStatus(error: unknown, fallback = 400): number {
   return fallback;
 }
 
+type ListCacheEntry<T> = {
+  expiresAt: number;
+  data: T;
+};
+
+const INSTALACIONES_LIST_CACHE_TTL_MS = Number(process.env.INSTALACIONES_LIST_CACHE_TTL_MS ?? 10_000);
+const SENSORES_INSTALADOS_LIST_CACHE_TTL_MS = Number(process.env.SENSORES_INSTALADOS_LIST_CACHE_TTL_MS ?? 8_000);
+const INSTALACIONES_LIST_CACHE_MAX_ENTRIES = 120;
+const SENSORES_INSTALADOS_LIST_CACHE_MAX_ENTRIES = 180;
+
+const instalacionesListCache = new Map<string, ListCacheEntry<any[]>>();
+const sensoresInstaladosListCache = new Map<string, ListCacheEntry<any[]>>();
+const instalacionesListInflight = new Map<string, Promise<any[]>>();
+const sensoresInstaladosListInflight = new Map<string, Promise<any[]>>();
+
+function buildScopeSignature(scope: RequestScope): string {
+  const organizations = [...scope.allowedOrganizationIds].sort((a, b) => a - b).join(',');
+  const branches = [...scope.allowedBranchIds].sort((a, b) => a - b).join(',');
+  const facilities = [...scope.allowedFacilityIds].sort((a, b) => a - b).join(',');
+
+  return [
+    `u:${scope.idUsuario}`,
+    `rol:${scope.role}`,
+    `idRol:${scope.idRol}`,
+    `org:${organizations}`,
+    `suc:${branches}`,
+    `ins:${facilities}`,
+  ].join('|');
+}
+
+function getListCache<T>(store: Map<string, ListCacheEntry<T>>, cacheKey: string): T | null {
+  const entry = store.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    store.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
+
+function setListCache<T>(
+  store: Map<string, ListCacheEntry<T>>,
+  cacheKey: string,
+  data: T,
+  ttlMs: number,
+  maxEntries: number
+): void {
+  if (ttlMs <= 0) return;
+  const now = Date.now();
+
+  for (const [key, entry] of store.entries()) {
+    if (entry.expiresAt <= now) store.delete(key);
+  }
+
+  while (store.size >= maxEntries) {
+    const oldestKey = store.keys().next().value;
+    if (!oldestKey) break;
+    store.delete(oldestKey);
+  }
+
+  store.set(cacheKey, {
+    expiresAt: now + ttlMs,
+    data,
+  });
+}
+
+function buildInstalacionesListCacheKey(scope: RequestScope, branchId?: number | null, activo?: string): string {
+  return `${buildScopeSignature(scope)}|branch:${branchId || 0}|activo:${activo ?? ''}`;
+}
+
+function buildSensoresInstaladosListCacheKey(scope: RequestScope, instalacionId?: number | null): string {
+  return `${buildScopeSignature(scope)}|inst:${instalacionId || 0}`;
+}
+
+function invalidateInstalacionReadCaches(): void {
+  instalacionesListCache.clear();
+  sensoresInstaladosListCache.clear();
+  instalacionesListInflight.clear();
+  sensoresInstaladosListInflight.clear();
+}
+
 function serializeInstalacion(instalacion: any) {
   const proceso = instalacion.procesos;
   const sucursal = instalacion.organizacion_sucursal;
@@ -179,12 +260,101 @@ function resolveSensorVisualState(sensor: any) {
   };
 }
 
-const sensorInstaladoInclude = {
-  instalacion: true,
-  catalogo_sensores: true,
+const sensorInstaladoRelationSelect = {
+  id_sensor_instalado: true,
+  id_instalacion: true,
+  id_sensor: true,
+  fecha_instalada: true,
+  descripcion: true,
+  catalogo_sensores: {
+    select: {
+      id_sensor: true,
+      nombre: true,
+      descripcion: true,
+      modelo: true,
+      marca: true,
+      rango_medicion: true,
+      unidad_medida: true,
+    },
+  },
+};
+
+const sensorInstaladoListSummarySelect = {
+  id_sensor_instalado: true,
+  catalogo_sensores: {
+    select: {
+      nombre: true,
+    },
+  },
+};
+
+const instalacionListSelect = {
+  id_instalacion: true,
+  id_organizacion_sucursal: true,
+  nombre_instalacion: true,
+  codigo_instalacion: true,
+  fecha_instalacion: true,
+  estado_operativo: true,
+  descripcion: true,
+  tipo_uso: true,
+  ubicacion: true,
+  latitud: true,
+  longitud: true,
+  capacidad_maxima: true,
+  capacidad_actual: true,
+  volumen_agua_m3: true,
+  profundidad_m: true,
+  fecha_ultima_inspeccion: true,
+  responsable_operativo: true,
+  contacto_emergencia: true,
+  id_proceso: true,
+  organizacion_sucursal: {
+    select: {
+      id_organizacion_sucursal: true,
+      id_organizacion: true,
+      nombre_sucursal: true,
+      organizacion: {
+        select: {
+          id_organizacion: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+  sensor_instalado: {
+    select: sensorInstaladoListSummarySelect,
+  },
+  procesos: {
+    select: {
+      id_proceso: true,
+      nombre_proceso: true,
+      especies: {
+        select: {
+          nombre: true,
+        },
+      },
+    },
+  },
+};
+
+const sensorInstaladoSelect = {
+  ...sensorInstaladoRelationSelect,
+  instalacion: {
+    select: {
+      id_instalacion: true,
+      id_organizacion_sucursal: true,
+      nombre_instalacion: true,
+    },
+  },
   lectura: {
     orderBy: [{ fecha: 'desc' as const }, { hora: 'desc' as const }],
     take: 1,
+    select: {
+      id_lectura: true,
+      fecha: true,
+      hora: true,
+      valor: true,
+    },
   },
 };
 
@@ -414,6 +584,7 @@ export async function createInstalacion(req: FastifyRequest, reply: FastifyReply
         },
       },
     });
+    invalidateInstalacionReadCaches();
     reply.status(201).send(serializeInstalacion(instalacion));
   } catch (error: any) {
     reply.status(resolveHttpStatus(error, 400)).send({ error: error.message });
@@ -444,32 +615,54 @@ export async function getInstalaciones(
       filters.push({ estado_operativo: req.query.activo === 'true' ? 'activo' : 'inactivo' });
     }
 
+    const cacheKey = buildInstalacionesListCacheKey(scope, branchId, req.query.activo);
+    const cached = getListCache(instalacionesListCache, cacheKey);
+    if (cached) {
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache');
+      return reply.send(cached);
+    }
+
+    const inflight = instalacionesListInflight.get(cacheKey);
+    if (inflight) {
+      const shared = await inflight;
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache-inflight');
+      return reply.send(shared);
+    }
+
     const where = filters.length > 1 ? { AND: filters } : (filters[0] ?? {});
 
-    const instalaciones = await prisma.instalacion.findMany({
-      where,
-      include: {
-        organizacion_sucursal: {
-          include: {
-            organizacion: true,
-          },
+    const computePromise = (async () => {
+      const instalaciones = await prisma.instalacion.findMany({
+        where,
+        select: instalacionListSelect,
+        orderBy: {
+          fecha_instalacion: 'desc',
         },
-        sensor_instalado: {
-          include: {
-            catalogo_sensores: true,
-          },
-        },
-        procesos: {
-          include: {
-            especies: true,
-          },
-        },
-      },
-      orderBy: {
-        fecha_instalacion: 'desc',
-      },
-    });
-    reply.send(instalaciones.map(serializeInstalacion));
+      });
+      return instalaciones.map(serializeInstalacion);
+    })();
+
+    instalacionesListInflight.set(cacheKey, computePromise);
+    try {
+      const payload = await computePromise;
+      setListCache(
+        instalacionesListCache,
+        cacheKey,
+        payload,
+        INSTALACIONES_LIST_CACHE_TTL_MS,
+        INSTALACIONES_LIST_CACHE_MAX_ENTRIES
+      );
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'db');
+      return reply.send(payload);
+    } finally {
+      instalacionesListInflight.delete(cacheKey);
+    }
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
   }
@@ -489,7 +682,7 @@ export async function getInstalacionById(req: FastifyRequest<{ Params: { id: str
             organizacion: true,
           },
         },
-        sensor_instalado: { include: { catalogo_sensores: true } },
+        sensor_instalado: { select: sensorInstaladoRelationSelect },
         procesos: {
           include: {
             especies: true,
@@ -595,7 +788,7 @@ export async function updateInstalacion(req: FastifyRequest<{ Params: { id: stri
         },
       },
     });
-    
+    invalidateInstalacionReadCaches();
     reply.send(serializeInstalacion(instalacion));
   } catch (error: any) {
     reply.status(resolveHttpStatus(error, 400)).send({ error: error.message });
@@ -625,6 +818,7 @@ export async function deleteInstalacion(req: FastifyRequest<{ Params: { id: stri
     }
 
     await prisma.instalacion.delete({ where: { id_instalacion: id } });
+    invalidateInstalacionReadCaches();
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -651,6 +845,7 @@ export async function createCatalogoSensor(req: FastifyRequest, reply: FastifyRe
         unidad_medida: body.unidad_medida ?? body.unidad
       }
     });
+    invalidateInstalacionReadCaches();
     reply.status(201).send(serializeCatalogoSensor(sensor));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -713,7 +908,7 @@ export async function updateCatalogoSensor(req: FastifyRequest<{ Params: { id: s
       where: { id_sensor: id },
       data
     });
-    
+    invalidateInstalacionReadCaches();
     reply.send(serializeCatalogoSensor(sensor));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -730,6 +925,7 @@ export async function deleteCatalogoSensor(req: FastifyRequest<{ Params: { id: s
 
     const id = parseInt(req.params.id);
     await prisma.catalogo_sensores.delete({ where: { id_sensor: id } });
+    invalidateInstalacionReadCaches();
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -774,7 +970,8 @@ export async function createSensorInstalado(req: FastifyRequest, reply: FastifyR
 
     if (typeof body.id_instalacion === 'number') {
       const existing = await prisma.sensor_instalado.findFirst({
-        where: { id_instalacion: body.id_instalacion, id_sensor: body.id_sensor }
+        where: { id_instalacion: body.id_instalacion, id_sensor: body.id_sensor },
+        select: { id_sensor_instalado: true },
       });
       if (existing) {
         return reply.status(409).send({
@@ -784,29 +981,20 @@ export async function createSensorInstalado(req: FastifyRequest, reply: FastifyR
       }
     }
 
-    const estadoOperativo = body.estado_operativo ?? 'activo';
-    const fechaMantenimiento = (
-      estadoOperativo === 'mantenimiento'
-        ? (body.fecha_mantenimiento ?? new Date())
-        : null
-    );
-
     const sensorInstalado = await prisma.sensor_instalado.create({
       data: {
         id_instalacion: body.id_instalacion ?? null,
         id_sensor: body.id_sensor,
         fecha_instalada: body.fecha_instalada,
         descripcion: body.descripcion,
-        estado_operativo: estadoOperativo,
-        fecha_mantenimiento: fechaMantenimiento,
-        id_lectura: body.id_lectura
-      }
+      },
+      select: { id_sensor_instalado: true },
     });
     const complete = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: sensorInstalado.id_sensor_instalado },
-      include: sensorInstaladoInclude,
+      select: sensorInstaladoSelect,
     });
-
+    invalidateInstalacionReadCaches();
     reply.status(201).send(serializeSensorInstalado(complete ?? sensorInstalado));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -833,13 +1021,51 @@ export async function getSensoresInstalados(
       filters.push({ id_instalacion: instalacionId });
     }
 
+    const cacheKey = buildSensoresInstaladosListCacheKey(scope, instalacionId);
+    const cached = getListCache(sensoresInstaladosListCache, cacheKey);
+    if (cached) {
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache');
+      return reply.send(cached);
+    }
+
+    const inflight = sensoresInstaladosListInflight.get(cacheKey);
+    if (inflight) {
+      const shared = await inflight;
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache-inflight');
+      return reply.send(shared);
+    }
+
     const where = filters.length > 1 ? { AND: filters } : (filters[0] ?? {});
 
-    const sensores = await prisma.sensor_instalado.findMany({
-      where,
-      include: sensorInstaladoInclude,
-    });
-    reply.send(sensores.map(serializeSensorInstalado));
+    const computePromise = (async () => {
+      const sensores = await prisma.sensor_instalado.findMany({
+        where,
+        select: sensorInstaladoSelect,
+      });
+      return sensores.map(serializeSensorInstalado);
+    })();
+
+    sensoresInstaladosListInflight.set(cacheKey, computePromise);
+    try {
+      const payload = await computePromise;
+      setListCache(
+        sensoresInstaladosListCache,
+        cacheKey,
+        payload,
+        SENSORES_INSTALADOS_LIST_CACHE_TTL_MS,
+        SENSORES_INSTALADOS_LIST_CACHE_MAX_ENTRIES
+      );
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'db');
+      return reply.send(payload);
+    } finally {
+      sensoresInstaladosListInflight.delete(cacheKey);
+    }
   } catch (error: any) {
     reply.status(500).send({ error: error.message });
   }
@@ -853,7 +1079,7 @@ export async function getSensorInstaladoById(req: FastifyRequest<{ Params: { id:
     const id = parseInt(req.params.id);
     const sensor = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: id },
-      include: sensorInstaladoInclude,
+      select: sensorInstaladoSelect,
     });
     
     if (!sensor) {
@@ -899,13 +1125,28 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
 
     const existingSensor = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: id },
-      include: {
+      select: {
+        id_sensor_instalado: true,
+        id_instalacion: true,
+        id_sensor: true,
+        fecha_instalada: true,
+        descripcion: true,
         instalacion: {
           select: {
             id_organizacion_sucursal: true,
           },
         },
-        catalogo_sensores: true,
+        catalogo_sensores: {
+          select: {
+            id_sensor: true,
+            nombre: true,
+            descripcion: true,
+            modelo: true,
+            marca: true,
+            rango_medicion: true,
+            unidad_medida: true,
+          },
+        },
       },
     });
 
@@ -947,7 +1188,8 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
           id_instalacion: targetInstalacionId,
           id_sensor: targetSensorId,
           NOT: { id_sensor_instalado: id }
-        }
+        },
+        select: { id_sensor_instalado: true },
       });
       if (existing) {
         return reply.status(409).send({
@@ -976,33 +1218,18 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
     if (body.id_sensor !== undefined) data.id_sensor = body.id_sensor;
     if (body.fecha_instalada !== undefined) data.fecha_instalada = body.fecha_instalada;
     if (body.descripcion !== undefined) data.descripcion = body.descripcion;
-    if (body.id_lectura !== undefined) data.id_lectura = body.id_lectura;
-    if (body.estado_operativo !== undefined) {
-      data.estado_operativo = body.estado_operativo;
-      if (body.estado_operativo === 'mantenimiento') {
-        data.fecha_mantenimiento = body.fecha_mantenimiento
-          ?? (
-            existingSensor.estado_operativo === 'mantenimiento'
-              ? existingSensor.fecha_mantenimiento
-              : new Date()
-          );
-      } else {
-        data.fecha_mantenimiento = body.fecha_mantenimiento ?? null;
-      }
-    } else if (body.fecha_mantenimiento !== undefined) {
-      data.fecha_mantenimiento = body.fecha_mantenimiento;
-    }
     
     const sensor = await prisma.sensor_instalado.update({
       where: { id_sensor_instalado: id },
-      data
+      data,
+      select: { id_sensor_instalado: true },
     });
     
     const complete = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: sensor.id_sensor_instalado },
-      include: sensorInstaladoInclude,
+      select: sensorInstaladoSelect,
     });
-
+    invalidateInstalacionReadCaches();
     reply.send(serializeSensorInstalado(complete ?? sensor));
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
@@ -1020,7 +1247,8 @@ export async function deleteSensorInstalado(req: FastifyRequest<{ Params: { id: 
     const id = parseInt(req.params.id);
     const existing = await prisma.sensor_instalado.findUnique({
       where: { id_sensor_instalado: id },
-      include: {
+      select: {
+        id_instalacion: true,
         instalacion: {
           select: {
             id_organizacion_sucursal: true,
@@ -1040,7 +1268,8 @@ export async function deleteSensorInstalado(req: FastifyRequest<{ Params: { id: 
       return reply.status(403).send({ error: 'No tiene acceso a sensores sin instalación asignada' });
     }
 
-    await prisma.sensor_instalado.delete({ where: { id_sensor_instalado: id } });
+    await prisma.sensor_instalado.deleteMany({ where: { id_sensor_instalado: id } });
+    invalidateInstalacionReadCaches();
     reply.status(204).send();
   } catch (error: any) {
     reply.status(400).send({ error: error.message });

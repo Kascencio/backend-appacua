@@ -2,6 +2,10 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../repositories/prisma.js';
 import { createProcesoSchema, updateProcesoSchema } from '../utils/validators.js';
 import {
+  serializeCrecimientoOstionConfig,
+  syncProcesoCrecimientoOstionConfig,
+} from '../services/crecimiento-ostion.service.js';
+import {
   buildInstalacionScopeWhere,
   canAccessFacility,
   canManageResources,
@@ -196,6 +200,7 @@ function serializeProceso(proceso: any) {
     updated_at: normalizeDate(proceso.fecha_fin_real ?? proceso.fecha_final),
     nombre_especie: proceso.especies?.nombre,
     nombre_instalacion: instalacion?.nombre_instalacion,
+    crecimiento_ostion: serializeCrecimientoOstionConfig(proceso.crecimiento_ostion_config, { includeMeasurements: false }),
   };
 }
 
@@ -518,6 +523,15 @@ export async function createProceso(req: FastifyRequest, reply: FastifyReply) {
         }
       });
 
+      if (body.crecimiento_ostion) {
+        await syncProcesoCrecimientoOstionConfig(tx, {
+          idProceso: created.id_proceso,
+          fechaInicio: body.fecha_inicio,
+          fechaFinal: body.fecha_final,
+          crecimiento: body.crecimiento_ostion,
+        });
+      }
+
       if (idInstalacion) {
         await tx.instalacion.update({
           where: { id_instalacion: idInstalacion },
@@ -530,6 +544,13 @@ export async function createProceso(req: FastifyRequest, reply: FastifyReply) {
         include: {
           especies: true,
           instalacion: true,
+          crecimiento_ostion_config: {
+            include: {
+              capturas: {
+                orderBy: { numero_captura: 'asc' },
+              },
+            },
+          },
         },
       });
     });
@@ -577,6 +598,13 @@ export async function getProcesos(
       include: {
         especies: true,
         instalacion: true,
+        crecimiento_ostion_config: {
+          include: {
+            capturas: {
+              orderBy: { numero_captura: 'asc' },
+            },
+          },
+        },
       },
       orderBy: {
         fecha_inicio: 'desc',
@@ -605,6 +633,18 @@ export async function getProcesoById(req: FastifyRequest<{ Params: { id: string 
       include: {
         especies: true,
         instalacion: true,
+        crecimiento_ostion_config: {
+          include: {
+            capturas: {
+              orderBy: { numero_captura: 'asc' },
+              include: {
+                mediciones: {
+                  orderBy: { lote_numero: 'asc' },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -646,7 +686,21 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
 
     const existing = await prisma.procesos.findUnique({
       where: { id_proceso: id },
-      include: { instalacion: true },
+      include: {
+        instalacion: true,
+        crecimiento_ostion_config: {
+          include: {
+            capturas: {
+              orderBy: { numero_captura: 'asc' },
+              include: {
+                mediciones: {
+                  orderBy: { lote_numero: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!existing) {
       return reply.status(404).send({ error: 'Proceso no encontrado' });
@@ -697,6 +751,15 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
         data,
       });
 
+      if (body.crecimiento_ostion) {
+        await syncProcesoCrecimientoOstionConfig(tx, {
+          idProceso: id,
+          fechaInicio: body.fecha_inicio ?? existing.fecha_inicio,
+          fechaFinal: body.fecha_final ?? existing.fecha_final,
+          crecimiento: body.crecimiento_ostion,
+        });
+      }
+
       if (idInstalacion) {
         await tx.instalacion.update({
           where: { id_instalacion: idInstalacion },
@@ -709,6 +772,18 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
         include: {
           especies: true,
           instalacion: true,
+          crecimiento_ostion_config: {
+            include: {
+              capturas: {
+                orderBy: { numero_captura: 'asc' },
+                include: {
+                  mediciones: {
+                    orderBy: { lote_numero: 'asc' },
+                  },
+                },
+              },
+            },
+          },
         },
       });
     });

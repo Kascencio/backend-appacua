@@ -25,6 +25,8 @@ const normalizedTelegramChatId =
   normalizeEnvValue(process.env.TELEGRAM_CHAT_ID) ||
   normalizeEnvValue(process.env.TELEGRAM_CHAT_ID_ADMIN);
 const normalizedTelegramWebhookSecret = normalizeEnvValue(process.env.TELEGRAM_WEBHOOK_SECRET);
+const normalizedTelegramWebhookBaseUrl = normalizeEnvValue(process.env.TELEGRAM_WEBHOOK_BASE_URL);
+const normalizedTelegramWebhookVerifyIntervalMs = normalizeEnvValue(process.env.TELEGRAM_WEBHOOK_VERIFY_INTERVAL_MS);
 
 if (normalizedTelegramBotToken) {
   process.env.TELEGRAM_BOT_TOKEN = normalizedTelegramBotToken;
@@ -35,6 +37,12 @@ if (normalizedTelegramChatId) {
 }
 if (normalizedTelegramWebhookSecret) {
   process.env.TELEGRAM_WEBHOOK_SECRET = normalizedTelegramWebhookSecret;
+}
+if (normalizedTelegramWebhookBaseUrl) {
+  process.env.TELEGRAM_WEBHOOK_BASE_URL = normalizedTelegramWebhookBaseUrl;
+}
+if (normalizedTelegramWebhookVerifyIntervalMs) {
+  process.env.TELEGRAM_WEBHOOK_VERIFY_INTERVAL_MS = normalizedTelegramWebhookVerifyIntervalMs;
 }
 
 if (!normalizedDatabaseUrl || !normalizedDatabaseUrl.startsWith('mysql://')) {
@@ -53,5 +61,7 @@ export const config = {
   telegramEnabled: normalizedTelegramEnabled === 'true' || !!normalizedTelegramBotToken,
   telegramBotToken: normalizedTelegramBotToken || '',
   telegramChatId: normalizedTelegramChatId || '',
-  telegramWebhookSecret: normalizedTelegramWebhookSecret || ''
+  telegramWebhookSecret: normalizedTelegramWebhookSecret || '',
+  telegramWebhookBaseUrl: normalizedTelegramWebhookBaseUrl || '',
+  telegramWebhookVerifyIntervalMs: Number(normalizedTelegramWebhookVerifyIntervalMs || 300000),
 };

@@ -1274,15 +1274,44 @@ export async function deleteTipoRol(req: FastifyRequest<{ Params: { id: string }
   }
 }
 
+const alertaSensorInstaladoSelect = {
+  id_sensor_instalado: true,
+  id_instalacion: true,
+  id_sensor: true,
+  fecha_instalada: true,
+  descripcion: true,
+  catalogo_sensores: {
+    select: {
+      id_sensor: true,
+      nombre: true,
+      unidad_medida: true,
+    },
+  },
+};
+
+const alertaWithRelationsSelect = {
+  id_alertas: true,
+  id_instalacion: true,
+  id_sensor_instalado: true,
+  descripcion: true,
+  dato_puntual: true,
+  leida: true,
+  fecha_lectura: true,
+  fecha_alerta: true,
+  instalacion: {
+    select: {
+      id_instalacion: true,
+      id_organizacion_sucursal: true,
+      nombre_instalacion: true,
+    },
+  },
+  sensor_instalado: {
+    select: alertaSensorInstaladoSelect,
+  },
+};
+
 type AlertaWithRelations = Prisma.alertasGetPayload<{
-  include: {
-    instalacion: true;
-    sensor_instalado: {
-      include: {
-        catalogo_sensores: true;
-      };
-    };
-  };
+  select: typeof alertaWithRelationsSelect;
 }>;
 
 function serializeAlerta(alerta: AlertaWithRelations) {
@@ -1317,14 +1346,7 @@ function serializeAlerta(alerta: AlertaWithRelations) {
 async function fetchAlertaWithRelations(id: number): Promise<AlertaWithRelations | null> {
   return prisma.alertas.findUnique({
     where: { id_alertas: id },
-    include: {
-      instalacion: true,
-      sensor_instalado: {
-        include: {
-          catalogo_sensores: true,
-        },
-      },
-    },
+    select: alertaWithRelationsSelect,
   });
 }
 
@@ -1485,14 +1507,7 @@ export async function getAlertas(
 
     const alertas = await prisma.alertas.findMany({
       where,
-      include: {
-        instalacion: true,
-        sensor_instalado: {
-          include: {
-            catalogo_sensores: true,
-          },
-        },
-      },
+      select: alertaWithRelationsSelect,
       orderBy: {
         id_alertas: 'desc',
       },

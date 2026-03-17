@@ -1,5 +1,5 @@
 import { prisma } from '../repositories/prisma.js';
-import { rangeQuerySchema, promediosQuerySchema } from '../utils/validators.js';
+import { promediosBatchQuerySchema, rangeQuerySchema, promediosQuerySchema } from '../utils/validators.js';
 import { buildReportXML } from '../utils/xml.helper.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import {
@@ -58,9 +58,58 @@ type ProcesoPayloadCacheEntry = {
   data: ProcesoLecturasPayload;
 };
 
+type PromediosPayloadItem = {
+  id_sensor_instalado: number;
+  timestamp: string;
+  promedio: number;
+  bucket_minutes?: number;
+  muestras?: number;
+};
+
+type PromediosCacheEntry = {
+  expiresAt: number;
+  data: PromediosPayloadItem[];
+};
+
+type PromediosBatchPayload = {
+  bucket_minutes: number;
+  total_sensores: number;
+  sensores: Array<{
+    id_sensor_instalado: number;
+    bucket_minutes: number;
+    puntos: PromediosPayloadItem[];
+  }>;
+};
+
+type PromediosBatchCacheEntry = {
+  expiresAt: number;
+  data: PromediosBatchPayload;
+};
+
+type DateTimeRangeSqlOptions = {
+  from?: string;
+  to?: string;
+  fechaColumn: string;
+  horaColumn: string;
+};
+
+type SensorAccessCacheEntry = {
+  expiresAt: number;
+  allowed: boolean;
+};
+
 const PROCESO_PAYLOAD_CACHE_TTL_MS = Number(process.env.PROCESO_PAYLOAD_CACHE_TTL_MS ?? 8_000);
 const PROCESO_PAYLOAD_CACHE_MAX_ENTRIES = 150;
 const procesoPayloadCache = new Map<string, ProcesoPayloadCacheEntry>();
+const PROMEDIOS_CACHE_TTL_MS = Number(process.env.PROMEDIOS_CACHE_TTL_MS ?? 12_000);
+const PROMEDIOS_CACHE_MAX_ENTRIES = 600;
+const PROMEDIOS_CACHE_TIME_ROUNDING_SECONDS = Number(process.env.PROMEDIOS_CACHE_TIME_ROUNDING_SECONDS ?? 10);
+const SENSOR_ACCESS_CACHE_TTL_MS = Number(process.env.SENSOR_ACCESS_CACHE_TTL_MS ?? 15_000);
+const promediosCache = new Map<string, PromediosCacheEntry>();
+const promediosInflight = new Map<string, Promise<PromediosPayloadItem[]>>();
+const promediosBatchCache = new Map<string, PromediosBatchCacheEntry>();
+const promediosBatchInflight = new Map<string, Promise<PromediosBatchPayload>>();
+const sensorAccessCache = new Map<string, SensorAccessCacheEntry>();
 
 function normalizeRangeQuery(rawQuery: any) {
   return rangeQuerySchema.parse({
@@ -76,6 +125,19 @@ function normalizePromediosRequest(rawQuery: any) {
     granularity: rawQuery.granularity,
     bucketMinutes: rawQuery.bucketMinutes,
     sensorInstaladoId: rawQuery.sensorInstaladoId ?? rawQuery.id_sensor_instalado ?? rawQuery.sensor_instalado_id,
+    from: rawQuery.from ?? rawQuery.desde ?? rawQuery.fecha_inicio,
+    to: rawQuery.to ?? rawQuery.hasta ?? rawQuery.fecha_fin,
+  });
+}
+
+function normalizePromediosBatchRequest(rawQuery: any) {
+  return promediosBatchQuerySchema.parse({
+    bucketMinutes: rawQuery.bucketMinutes,
+    sensorInstaladoIds:
+      rawQuery.sensorInstaladoIds ??
+      rawQuery.sensor_instalado_ids ??
+      rawQuery.sensorInstaladoId ??
+      rawQuery.id_sensor_instalado,
     from: rawQuery.from ?? rawQuery.desde ?? rawQuery.fecha_inicio,
     to: rawQuery.to ?? rawQuery.hasta ?? rawQuery.fecha_fin,
   });
@@ -175,6 +237,246 @@ function setProcesoPayloadCache(cacheKey: string, payload: ProcesoLecturasPayloa
   });
 }
 
+function buildSensorAccessCacheKey(scope: RequestScope, sensorInstaladoId: number): string {
+  return `${buildScopeSignature(scope)}|sensor:${sensorInstaladoId}`;
+}
+
+function getCachedSensorAccess(scope: RequestScope, sensorInstaladoId: number): boolean | null {
+  if (SENSOR_ACCESS_CACHE_TTL_MS <= 0) return null;
+  const cacheKey = buildSensorAccessCacheKey(scope, sensorInstaladoId);
+  const entry = sensorAccessCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    sensorAccessCache.delete(cacheKey);
+    return null;
+  }
+  return entry.allowed;
+}
+
+function setCachedSensorAccess(scope: RequestScope, sensorInstaladoId: number, allowed: boolean): void {
+  if (SENSOR_ACCESS_CACHE_TTL_MS <= 0) return;
+  const cacheKey = buildSensorAccessCacheKey(scope, sensorInstaladoId);
+  sensorAccessCache.set(cacheKey, {
+    expiresAt: Date.now() + SENSOR_ACCESS_CACHE_TTL_MS,
+    allowed,
+  });
+}
+
+function buildPromediosCacheKey(
+  scope: RequestScope,
+  q: { sensorInstaladoId: number; granularity?: string; bucketMinutes?: number; from?: string; to?: string }
+): string {
+  const roundSeconds = Number.isFinite(PROMEDIOS_CACHE_TIME_ROUNDING_SECONDS)
+    ? Math.max(0, Math.trunc(PROMEDIOS_CACHE_TIME_ROUNDING_SECONDS))
+    : 0;
+  const normalizeTime = (value?: string): string => {
+    if (!value) return '';
+    if (roundSeconds <= 0) return value;
+
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) return value;
+
+    const roundedMs = Math.floor(timestamp / (roundSeconds * 1000)) * (roundSeconds * 1000);
+    return new Date(roundedMs).toISOString();
+  };
+
+  return [
+    buildScopeSignature(scope),
+    `sensor:${q.sensorInstaladoId}`,
+    `gran:${q.granularity || 'default'}`,
+    `bucket:${q.bucketMinutes ?? 0}`,
+    `from:${normalizeTime(q.from)}`,
+    `to:${normalizeTime(q.to)}`,
+  ].join('|');
+}
+
+function prunePromediosCache(now = Date.now()): void {
+  for (const [key, entry] of promediosCache.entries()) {
+    if (entry.expiresAt <= now) {
+      promediosCache.delete(key);
+    }
+  }
+}
+
+function buildPromediosBatchCacheKey(
+  scope: RequestScope,
+  q: { sensorInstaladoIds: number[]; bucketMinutes: number; from?: string; to?: string }
+): string {
+  return [
+    buildScopeSignature(scope),
+    `sensors:${[...q.sensorInstaladoIds].sort((a, b) => a - b).join(',')}`,
+    `bucket:${q.bucketMinutes}`,
+    `from:${q.from || ''}`,
+    `to:${q.to || ''}`,
+  ].join('|');
+}
+
+function prunePromediosBatchCache(now = Date.now()): void {
+  for (const [key, entry] of promediosBatchCache.entries()) {
+    if (entry.expiresAt <= now) {
+      promediosBatchCache.delete(key);
+    }
+  }
+}
+
+function getCachedPromediosBatch(cacheKey: string): PromediosBatchPayload | null {
+  const entry = promediosBatchCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    promediosBatchCache.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedPromediosBatch(cacheKey: string, payload: PromediosBatchPayload): void {
+  if (PROMEDIOS_CACHE_TTL_MS <= 0) return;
+
+  const now = Date.now();
+  prunePromediosBatchCache(now);
+
+  while (promediosBatchCache.size >= Math.max(100, Math.floor(PROMEDIOS_CACHE_MAX_ENTRIES / 3))) {
+    const oldestKey = promediosBatchCache.keys().next().value;
+    if (!oldestKey) break;
+    promediosBatchCache.delete(oldestKey);
+  }
+
+  promediosBatchCache.set(cacheKey, {
+    expiresAt: now + PROMEDIOS_CACHE_TTL_MS,
+    data: payload,
+  });
+}
+
+function appendDateTimeRangeSqlCondition(
+  query: string,
+  params: any[],
+  options: DateTimeRangeSqlOptions
+): string {
+  const { from, to, fechaColumn, horaColumn } = options;
+  let nextQuery = query;
+
+  if (from) {
+    nextQuery += ` AND (${fechaColumn} > DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} >= TIME(?)))`;
+    params.push(from, from, from);
+  }
+
+  if (to) {
+    nextQuery += ` AND (${fechaColumn} < DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} <= TIME(?)))`;
+    params.push(to, to, to);
+  }
+
+  return nextQuery;
+}
+
+function splitTimestampParts(timestamp: Date): { fecha: Date; hora: Date } {
+  const iso = timestamp.toISOString();
+  const datePart = iso.slice(0, 10);
+  const timePart = iso.slice(11, 19);
+
+  return {
+    fecha: new Date(`${datePart}T00:00:00.000Z`),
+    hora: new Date(`1970-01-01T${timePart}.000Z`),
+  };
+}
+
+async function queryLecturaBuckets(
+  sensorInstaladoId: number,
+  bucketMinutes: number,
+  from?: string,
+  to?: string,
+): Promise<Array<{ id_sensor_instalado: number; timestamp: string; promedio: number; muestras: number }>> {
+  let query = `
+    SELECT l.id_sensor_instalado,
+           FROM_UNIXTIME(
+             FLOOR(UNIX_TIMESTAMP(TIMESTAMP(l.fecha, l.hora)) / (? * 60)) * (? * 60)
+           ) AS ts,
+           ROUND(AVG(l.valor), 2) AS promedio,
+           COUNT(*) AS muestras
+    FROM lectura l
+    WHERE l.id_sensor_instalado = ?
+  `;
+  const params: any[] = [bucketMinutes, bucketMinutes, sensorInstaladoId];
+  query = appendDateTimeRangeSqlCondition(query, params, {
+    from,
+    to,
+    fechaColumn: 'l.fecha',
+    horaColumn: 'l.hora',
+  });
+  query += ` GROUP BY l.id_sensor_instalado, ts ORDER BY ts ASC`;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+  return rows.map((row) => ({
+    id_sensor_instalado: Number(row.id_sensor_instalado),
+    timestamp: new Date(row.ts).toISOString(),
+    promedio: Number(row.promedio),
+    muestras: Number(row.muestras),
+  }));
+}
+
+async function queryLecturaBucketsBatch(
+  sensorInstaladoIds: number[],
+  bucketMinutes: number,
+  from?: string,
+  to?: string,
+): Promise<Array<{ id_sensor_instalado: number; timestamp: string; promedio: number; muestras: number }>> {
+  if (sensorInstaladoIds.length === 0) return [];
+
+  const placeholders = sensorInstaladoIds.map(() => '?').join(', ');
+  let query = `
+    SELECT l.id_sensor_instalado,
+           FROM_UNIXTIME(
+             FLOOR(UNIX_TIMESTAMP(TIMESTAMP(l.fecha, l.hora)) / (? * 60)) * (? * 60)
+           ) AS ts,
+           ROUND(AVG(l.valor), 2) AS promedio,
+           COUNT(*) AS muestras
+    FROM lectura l
+    WHERE l.id_sensor_instalado IN (${placeholders})
+  `;
+  const params: any[] = [bucketMinutes, bucketMinutes, ...sensorInstaladoIds];
+  query = appendDateTimeRangeSqlCondition(query, params, {
+    from,
+    to,
+    fechaColumn: 'l.fecha',
+    horaColumn: 'l.hora',
+  });
+
+  query += ` GROUP BY l.id_sensor_instalado, ts ORDER BY l.id_sensor_instalado ASC, ts ASC`;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+  return rows.map((row) => ({
+    id_sensor_instalado: Number(row.id_sensor_instalado),
+    timestamp: new Date(row.ts).toISOString(),
+    promedio: Number(row.promedio),
+    muestras: Number(row.muestras),
+  }));
+}
+
+function getCachedPromedios(cacheKey: string): PromediosPayloadItem[] | null {
+  if (PROMEDIOS_CACHE_TTL_MS <= 0) return null;
+  const entry = promediosCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    promediosCache.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedPromedios(cacheKey: string, payload: PromediosPayloadItem[]): void {
+  if (PROMEDIOS_CACHE_TTL_MS <= 0) return;
+  const now = Date.now();
+  prunePromediosCache(now);
+  while (promediosCache.size >= PROMEDIOS_CACHE_MAX_ENTRIES) {
+    const oldestKey = promediosCache.keys().next().value;
+    if (!oldestKey) break;
+    promediosCache.delete(oldestKey);
+  }
+  promediosCache.set(cacheKey, {
+    expiresAt: now + PROMEDIOS_CACHE_TTL_MS,
+    data: payload,
+  });
+}
+
 function createEmptyProcesoPayload(
   procesoId: number,
   from?: string,
@@ -205,6 +507,57 @@ async function canAccessSensorInstalado(scope: RequestScope, sensorInstaladoId: 
   if (!sensor) return false;
   if (typeof sensor.id_instalacion !== 'number') return false;
   return canAccessFacility(scope, sensor.id_instalacion, sensor.instalacion?.id_organizacion_sucursal);
+}
+
+async function canAccessSensorInstaladoCached(
+  scope: RequestScope,
+  sensorInstaladoId: number
+): Promise<boolean> {
+  const cached = getCachedSensorAccess(scope, sensorInstaladoId);
+  if (cached !== null) return cached;
+
+  const allowed = await canAccessSensorInstalado(scope, sensorInstaladoId);
+  setCachedSensorAccess(scope, sensorInstaladoId, allowed);
+  return allowed;
+}
+
+async function getAccessibleSensorInstaladoIds(
+  scope: RequestScope,
+  sensorInstaladoIds: number[],
+): Promise<number[]> {
+  if (sensorInstaladoIds.length === 0) return [];
+
+  const sensors = await prisma.sensor_instalado.findMany({
+    where: {
+      id_sensor_instalado: {
+        in: sensorInstaladoIds,
+      },
+    },
+    select: {
+      id_sensor_instalado: true,
+      id_instalacion: true,
+      instalacion: {
+        select: {
+          id_organizacion_sucursal: true,
+        },
+      },
+    },
+  });
+
+  const allowed = new Set<number>();
+
+  for (const sensor of sensors) {
+    const isAllowed =
+      typeof sensor.id_instalacion === 'number' &&
+      canAccessFacility(scope, sensor.id_instalacion, sensor.instalacion?.id_organizacion_sucursal);
+
+    setCachedSensorAccess(scope, sensor.id_sensor_instalado, isAllowed);
+    if (isAllowed) {
+      allowed.add(sensor.id_sensor_instalado);
+    }
+  }
+
+  return sensorInstaladoIds.filter((id) => allowed.has(id));
 }
 
 async function buildProcesoLecturasPayload(
@@ -417,14 +770,14 @@ export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
     if (!scope) return;
 
     const q = normalizeRangeQuery(req.query as any);
-    const sensorAllowed = await canAccessSensorInstalado(scope, q.sensorInstaladoId);
+    const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
     if (!sensorAllowed) {
       return reply.status(403).send({ error: 'No tiene acceso a este sensor instalado' });
     }
 
     let query = `
       SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
-             CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en,
+             TIMESTAMP(l.fecha, l.hora) AS tomada_en,
              l.fecha, l.hora,
              si.id_instalacion,
              cs.sensor AS tipo_medida,
@@ -435,17 +788,14 @@ export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
       WHERE l.id_sensor_instalado = ?
     `;
     const params: any[] = [q.sensorInstaladoId];
+    query = appendDateTimeRangeSqlCondition(query, params, {
+      from: q.from,
+      to: q.to,
+      fechaColumn: 'l.fecha',
+      horaColumn: 'l.hora',
+    });
 
-    if (q.from) {
-      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) >= ?`;
-      params.push(q.from);
-    }
-    if (q.to) {
-      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) <= ?`;
-      params.push(q.to);
-    }
-
-    query += ` ORDER BY tomada_en DESC LIMIT ?`;
+    query += ` ORDER BY l.fecha DESC, l.hora DESC LIMIT ?`;
     params.push(q.limit || 500);
 
     const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
@@ -538,32 +888,45 @@ export async function getResumenHorario(req: FastifyRequest, reply: FastifyReply
     if (!scope) return;
 
     const q = normalizeRangeQuery(req.query as any);
-    const sensorAllowed = await canAccessSensorInstalado(scope, q.sensorInstaladoId);
+    const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
     if (!sensorAllowed) {
       return reply.status(403).send({ error: 'No tiene acceso a este sensor instalado' });
     }
 
     let query = `
       SELECT rlh.id_resumen, rlh.id_sensor_instalado, rlh.promedio, rlh.registros,
-             CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) AS fecha_hora,
+             TIMESTAMP(rlh.fecha, rlh.hora) AS fecha_hora,
              rlh.fecha, rlh.hora
       FROM resumen_lectura_horaria rlh
       WHERE rlh.id_sensor_instalado = ?
     `;
     const params: any[] = [q.sensorInstaladoId];
+    query = appendDateTimeRangeSqlCondition(query, params, {
+      from: q.from,
+      to: q.to,
+      fechaColumn: 'rlh.fecha',
+      horaColumn: 'rlh.hora',
+    });
 
-    if (q.from) {
-      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) >= ?`;
-      params.push(q.from);
+    query += ` ORDER BY rlh.fecha ASC, rlh.hora ASC`;
+
+    let rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+    if (rows.length === 0) {
+      const fallback = await queryLecturaBuckets(q.sensorInstaladoId, 60, q.from, q.to);
+      rows = fallback.map((row) => {
+        const timestamp = new Date(row.timestamp);
+        const parts = splitTimestampParts(timestamp);
+        return {
+          id_resumen: 0,
+          id_sensor_instalado: row.id_sensor_instalado,
+          promedio: row.promedio,
+          registros: row.muestras,
+          fecha_hora: timestamp,
+          fecha: parts.fecha,
+          hora: parts.hora,
+        };
+      });
     }
-    if (q.to) {
-      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) <= ?`;
-      params.push(q.to);
-    }
-
-    query += ` ORDER BY fecha_hora ASC`;
-
-    const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 
     return reply.send(rows.map((row) => ({
       id_resumen: Number(row.id_resumen),
@@ -585,97 +948,217 @@ export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
     if (!scope) return;
 
     const q = normalizePromediosRequest(req.query as any);
-    const sensorAllowed = await canAccessSensorInstalado(scope, q.sensorInstaladoId);
+    const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
     if (!sensorAllowed) {
       return reply.status(403).send({ error: 'No tiene acceso a este sensor instalado' });
     }
 
-    if (q.bucketMinutes) {
+    const cacheKey = buildPromediosCacheKey(scope, q);
+    const cached = getCachedPromedios(cacheKey);
+    if (cached) {
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache');
+      return reply.send(cached);
+    }
+
+    const inflight = promediosInflight.get(cacheKey);
+    if (inflight) {
+      const shared = await inflight;
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache-inflight');
+      return reply.send(shared);
+    }
+
+    const computePromise = (async (): Promise<PromediosPayloadItem[]> => {
+      if (q.bucketMinutes) {
+        let query = `
+          SELECT l.id_sensor_instalado,
+                 FROM_UNIXTIME(
+                   FLOOR(UNIX_TIMESTAMP(TIMESTAMP(l.fecha, l.hora)) / (? * 60)) * (? * 60)
+                 ) AS ts,
+                 ROUND(AVG(l.valor), 2) AS promedio,
+                 COUNT(*) AS muestras
+          FROM lectura l
+          WHERE l.id_sensor_instalado = ?
+        `;
+        const params: any[] = [q.bucketMinutes, q.bucketMinutes, q.sensorInstaladoId];
+        query = appendDateTimeRangeSqlCondition(query, params, {
+          from: q.from,
+          to: q.to,
+          fechaColumn: 'l.fecha',
+          horaColumn: 'l.hora',
+        });
+
+        query += ` GROUP BY l.id_sensor_instalado, ts ORDER BY ts ASC`;
+
+        const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+        return rows.map((row) => ({
+          id_sensor_instalado: Number(row.id_sensor_instalado),
+          bucket_minutes: q.bucketMinutes,
+          timestamp: new Date(row.ts).toISOString(),
+          promedio: Number(row.promedio),
+          muestras: Number(row.muestras),
+        }));
+      }
+
+      if (q.granularity === '15min') {
+        let query = `
+          SELECT p.id_sensor_instalado,
+                 TIMESTAMP(p.fecha, p.hora) AS ts,
+                 p.promedio
+          FROM promedio p
+          WHERE p.id_sensor_instalado = ?
+        `;
+        const params: any[] = [q.sensorInstaladoId];
+        query = appendDateTimeRangeSqlCondition(query, params, {
+          from: q.from,
+          to: q.to,
+          fechaColumn: 'p.fecha',
+          horaColumn: 'p.hora',
+        });
+        query += ` ORDER BY p.fecha ASC, p.hora ASC`;
+
+        let rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+        if (rows.length === 0) {
+          rows = await queryLecturaBuckets(q.sensorInstaladoId, 15, q.from, q.to);
+        }
+
+        return rows.map((row) => ({
+          id_sensor_instalado: Number(row.id_sensor_instalado),
+          timestamp: new Date(row.ts ?? row.timestamp).toISOString(),
+          promedio: Number(row.promedio),
+        }));
+      }
+
       let query = `
-        SELECT l.id_sensor_instalado,
-               FROM_UNIXTIME(
-                 FLOOR(UNIX_TIMESTAMP(TIMESTAMP(l.fecha, l.hora)) / (? * 60)) * (? * 60)
-               ) AS ts,
-               ROUND(AVG(l.valor), 2) AS promedio,
-               COUNT(*) AS muestras
-        FROM lectura l
-        WHERE l.id_sensor_instalado = ?
+        SELECT rlh.id_sensor_instalado,
+               TIMESTAMP(rlh.fecha, rlh.hora) AS ts,
+               rlh.promedio
+        FROM resumen_lectura_horaria rlh
+        WHERE rlh.id_sensor_instalado = ?
       `;
-      const params: any[] = [q.bucketMinutes, q.bucketMinutes, q.sensorInstaladoId];
+      const params: any[] = [q.sensorInstaladoId];
+      query = appendDateTimeRangeSqlCondition(query, params, {
+        from: q.from,
+        to: q.to,
+        fechaColumn: 'rlh.fecha',
+        horaColumn: 'rlh.hora',
+      });
+      query += ` ORDER BY rlh.fecha ASC, rlh.hora ASC`;
 
-      if (q.from) {
-        query += ` AND TIMESTAMP(l.fecha, l.hora) >= ?`;
-        params.push(q.from);
+      let rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+      if (rows.length === 0) {
+        rows = (await queryLecturaBuckets(q.sensorInstaladoId, 60, q.from, q.to)).map((row) => ({
+          id_sensor_instalado: row.id_sensor_instalado,
+          ts: row.timestamp,
+          promedio: row.promedio,
+        }));
       }
-      if (q.to) {
-        query += ` AND TIMESTAMP(l.fecha, l.hora) <= ?`;
-        params.push(q.to);
-      }
-
-      query += ` GROUP BY l.id_sensor_instalado, ts ORDER BY ts ASC`;
-
-      const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
-      return reply.send(rows.map((row) => ({
+      return rows.map((row) => ({
         id_sensor_instalado: Number(row.id_sensor_instalado),
-        bucket_minutes: q.bucketMinutes,
         timestamp: new Date(row.ts).toISOString(),
         promedio: Number(row.promedio),
-        muestras: Number(row.muestras)
-      })));
+      }));
+    })();
+
+    promediosInflight.set(cacheKey, computePromise);
+    try {
+      const payload = await computePromise;
+      setCachedPromedios(cacheKey, payload);
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'db');
+      return reply.send(payload);
+    } finally {
+      promediosInflight.delete(cacheKey);
+    }
+  } catch (error: any) {
+    reply.status(400).send({ error: error.message });
+  }
+}
+
+export async function getPromediosBatch(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const scope = await requireRequestScope(req, reply);
+    if (!scope) return;
+
+    const q = normalizePromediosBatchRequest(req.query as any);
+    const uniqueSensorIds = [...new Set(q.sensorInstaladoIds)];
+    const allowedSensorIds = await getAccessibleSensorInstaladoIds(scope, uniqueSensorIds);
+
+    if (allowedSensorIds.length === 0) {
+      return reply.status(403).send({ error: 'No tiene acceso a los sensores solicitados' });
     }
 
-    if (q.granularity === '15min') {
-      const query = `
-        SELECT id_sensor_instalado,
-               CAST(CONCAT(fecha,' ',hora) AS DATETIME) AS ts,
-               promedio
-        FROM promedios
-        WHERE id_sensor_instalado = ?
-          ${q.from ? 'AND CAST(CONCAT(fecha," ",hora) AS DATETIME) >= ?' : ''}
-          ${q.to ? 'AND CAST(CONCAT(fecha," ",hora) AS DATETIME) <= ?' : ''}
-        ORDER BY ts ASC
-      `;
+    const cacheKey = buildPromediosBatchCacheKey(scope, {
+      sensorInstaladoIds: allowedSensorIds,
+      bucketMinutes: q.bucketMinutes,
+      from: q.from,
+      to: q.to,
+    });
 
-      const params: any[] = [q.sensorInstaladoId];
-      if (q.from) params.push(q.from);
-      if (q.to) params.push(q.to);
-
-      const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
-
-      return reply.send(rows.map((row) => ({
-        id_sensor_instalado: Number(row.id_sensor_instalado),
-        timestamp: new Date(row.ts).toISOString(),
-        promedio: Number(row.promedio)
-      })));
+    const cached = getCachedPromediosBatch(cacheKey);
+    if (cached) {
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache');
+      return reply.send(cached);
     }
 
-    let query = `
-      SELECT rlh.id_sensor_instalado,
-             CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) AS ts,
-             rlh.promedio
-      FROM resumen_lectura_horaria rlh
-      WHERE rlh.id_sensor_instalado = ?
-    `;
-    const params: any[] = [q.sensorInstaladoId];
-
-    if (q.from) {
-      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) >= ?`;
-      params.push(q.from);
-    }
-    if (q.to) {
-      query += ` AND CAST(CONCAT(rlh.fecha, ' ', rlh.hora) AS DATETIME) <= ?`;
-      params.push(q.to);
+    const inflight = promediosBatchInflight.get(cacheKey);
+    if (inflight) {
+      const shared = await inflight;
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'cache-inflight');
+      return reply.send(shared);
     }
 
-    query += ` ORDER BY ts ASC`;
+    const computePromise = (async (): Promise<PromediosBatchPayload> => {
+      const points = await queryLecturaBucketsBatch(
+        allowedSensorIds,
+        q.bucketMinutes,
+        q.from,
+        q.to,
+      );
 
-    const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
+      const grouped = new Map<number, PromediosPayloadItem[]>();
+      for (const point of points) {
+        const current = grouped.get(point.id_sensor_instalado) ?? [];
+        current.push({
+          id_sensor_instalado: point.id_sensor_instalado,
+          timestamp: point.timestamp,
+          promedio: point.promedio,
+          muestras: point.muestras,
+          bucket_minutes: q.bucketMinutes,
+        });
+        grouped.set(point.id_sensor_instalado, current);
+      }
 
-    return reply.send(rows.map((row) => ({
-      id_sensor_instalado: Number(row.id_sensor_instalado),
-      timestamp: new Date(row.ts).toISOString(),
-      promedio: Number(row.promedio)
-    })));
+      return {
+        bucket_minutes: q.bucketMinutes,
+        total_sensores: allowedSensorIds.length,
+        sensores: allowedSensorIds.map((sensorId) => ({
+          id_sensor_instalado: sensorId,
+          bucket_minutes: q.bucketMinutes,
+          puntos: grouped.get(sensorId) ?? [],
+        })),
+      };
+    })();
+
+    promediosBatchInflight.set(cacheKey, computePromise);
+    try {
+      const payload = await computePromise;
+      setCachedPromediosBatch(cacheKey, payload);
+      reply.header('Cache-Control', 'private, max-age=5, stale-while-revalidate=15');
+      reply.header('Vary', 'Authorization, Cookie');
+      reply.header('X-Data-Source', 'db');
+      return reply.send(payload);
+    } finally {
+      promediosBatchInflight.delete(cacheKey);
+    }
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
   }
@@ -687,29 +1170,26 @@ export async function getReporteXML(req: FastifyRequest, reply: FastifyReply) {
     if (!scope) return;
 
     const q = normalizeRangeQuery(req.query as any);
-    const sensorAllowed = await canAccessSensorInstalado(scope, q.sensorInstaladoId);
+    const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
     if (!sensorAllowed) {
       return reply.status(403).send({ error: 'No tiene acceso a este sensor instalado' });
     }
 
     let query = `
       SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
-             CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en
+             TIMESTAMP(l.fecha, l.hora) AS tomada_en
       FROM lectura l
       WHERE l.id_sensor_instalado = ?
     `;
     const params: any[] = [q.sensorInstaladoId];
+    query = appendDateTimeRangeSqlCondition(query, params, {
+      from: q.from,
+      to: q.to,
+      fechaColumn: 'l.fecha',
+      horaColumn: 'l.hora',
+    });
 
-    if (q.from) {
-      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) >= ?`;
-      params.push(q.from);
-    }
-    if (q.to) {
-      query += ` AND CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) <= ?`;
-      params.push(q.to);
-    }
-
-    query += ` ORDER BY tomada_en ASC`;
+    query += ` ORDER BY l.fecha ASC, l.hora ASC`;
 
     const rows = await prisma.$queryRawUnsafe<any[]>(query, ...params);
 

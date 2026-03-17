@@ -1,5 +1,6 @@
 import { PrismaClient, type proceso_estado } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { refreshLecturaAggregatesWindow } from '../src/services/lectura-aggregates.service.js';
 
 const prisma = new PrismaClient();
 
@@ -323,7 +324,6 @@ async function main() {
 
   const rolSuperadmin = await ensureRole('SUPERADMIN');
   const rolAdmin = await ensureRole('ADMIN');
-  const rolUser = await ensureRole('USER');
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -341,59 +341,22 @@ async function main() {
     passwordHash,
   });
 
-  const operador = await ensureUser({
-    nombre: 'Operador Campo',
-    correo: 'operador@example.com',
-    idRol: rolUser.id_rol,
-    passwordHash,
-  });
-
   const organizacionesData = [
     {
-      nombre: 'Aqua Norte',
-      razon_social: 'Aqua Norte S.A. de C.V.',
-      rfc: 'AQN010101AA1',
-      correo: 'contacto@aquanorte.com',
+      nombre: 'Aqua Principal',
+      razon_social: 'Aqua Principal S.A. de C.V.',
+      rfc: 'APR010101AA1',
+      correo: 'contacto@aquaprincipal.com',
       telefono: '+52 993 100 1001',
       direccion: 'Carretera Villahermosa - Frontera km 12',
       latitud: 17.9892,
       longitud: -92.9361,
       branches: [
         {
-          nombre_sucursal: 'Norte - Granja Centro',
+          nombre_sucursal: 'Sucursal Principal',
           direccion_sucursal: 'Ranchería Río Viejo, Centro, Tabasco',
           latitud: 17.9951,
           longitud: -92.9302,
-        },
-        {
-          nombre_sucursal: 'Norte - Granja Este',
-          direccion_sucursal: 'Poblado Dos Montes, Centro, Tabasco',
-          latitud: 18.0104,
-          longitud: -92.9011,
-        },
-      ],
-    },
-    {
-      nombre: 'BioAqua Sureste',
-      razon_social: 'BioAqua Sureste S. de R.L.',
-      rfc: 'BAS010101BB2',
-      correo: 'contacto@bioaquasur.com',
-      telefono: '+52 993 100 2002',
-      direccion: 'Periférico Carlos Pellicer, Villahermosa',
-      latitud: 17.9713,
-      longitud: -92.9569,
-      branches: [
-        {
-          nombre_sucursal: 'Sureste - Módulo Laguna',
-          direccion_sucursal: 'Laguna El Espejo, Villahermosa',
-          latitud: 17.9642,
-          longitud: -92.9631,
-        },
-        {
-          nombre_sucursal: 'Sureste - Módulo Delta',
-          direccion_sucursal: 'Ranchería Medellín y Pigua 2a Sección',
-          latitud: 17.9476,
-          longitud: -92.9157,
         },
       ],
     },
@@ -494,68 +457,89 @@ async function main() {
   const parametroPH = await ensureParametro('pH', 'pH');
   const parametroOxigeno = await ensureParametro('Oxígeno Disuelto', 'mg/L');
   const parametroSalinidad = await ensureParametro('Salinidad', 'ppt');
-  const parametroTurbidez = await ensureParametro('Turbidez', 'NTU');
 
-  const especieTilapia = await ensureEspecie({
-    nombre: 'Tilapia',
-    nombre_cientifico: 'Oreochromis niloticus',
-    descripcion: 'Especie tropical de rápido crecimiento para cultivo semi-intensivo.',
-    temperatura: [24, 30],
-    ph: [6.5, 8.5],
-    oxigeno: [5, 9],
-    salinidad: [0, 12],
-  });
+  const especiesBase = [
+    {
+      nombre: 'Tilapia',
+      nombre_cientifico: 'Oreochromis niloticus',
+      descripcion: 'Especie tropical de rápido crecimiento para cultivo semi-intensivo.',
+      temperatura: [24, 30] as [number, number],
+      ph: [6.5, 8.5] as [number, number],
+      oxigeno: [5, 9] as [number, number],
+      salinidad: [0, 12] as [number, number],
+    },
+    {
+      nombre: 'Camarón Blanco',
+      nombre_cientifico: 'Litopenaeus vannamei',
+      descripcion: 'Crustáceo marino adaptable a sistemas intensivos, biofloc y agua salobre.',
+      temperatura: [26, 32] as [number, number],
+      ph: [7.2, 8.4] as [number, number],
+      oxigeno: [5.5, 10] as [number, number],
+      salinidad: [10, 28] as [number, number],
+    },
+    {
+      nombre: 'Trucha Arcoíris',
+      nombre_cientifico: 'Oncorhynchus mykiss',
+      descripcion: 'Especie de agua fría que requiere alto oxígeno disuelto y control térmico estricto.',
+      temperatura: [12, 18] as [number, number],
+      ph: [6.8, 8.0] as [number, number],
+      oxigeno: [7.0, 12.0] as [number, number],
+      salinidad: [0, 5] as [number, number],
+    },
+    {
+      nombre: 'Carpa Común',
+      nombre_cientifico: 'Cyprinus carpio',
+      descripcion: 'Pez omnívoro resistente y adaptable a variaciones ambientales.',
+      temperatura: [20, 28] as [number, number],
+      ph: [6.5, 8.5] as [number, number],
+      oxigeno: [4.0, 8.0] as [number, number],
+      salinidad: [0, 8] as [number, number],
+    },
+    {
+      nombre: 'Bagre de Canal',
+      nombre_cientifico: 'Ictalurus punctatus',
+      descripcion: 'Especie de fondo con alta tolerancia y amplia adopción en acuicultura continental.',
+      temperatura: [24, 30] as [number, number],
+      ph: [6.5, 8.5] as [number, number],
+      oxigeno: [4.0, 8.0] as [number, number],
+      salinidad: [0, 10] as [number, number],
+    },
+    {
+      nombre: 'Ostión Japonés',
+      nombre_cientifico: 'Crassostrea gigas',
+      descripcion: 'Molusco filtrador de cultivo costero, útil para operaciones en agua salobre-marina.',
+      temperatura: [18, 25] as [number, number],
+      ph: [7.5, 8.4] as [number, number],
+      oxigeno: [5.0, 9.0] as [number, number],
+      salinidad: [20, 35] as [number, number],
+    },
+  ];
 
-  const especieCamaron = await ensureEspecie({
-    nombre: 'Camarón Blanco',
-    nombre_cientifico: 'Litopenaeus vannamei',
-    descripcion: 'Camarón marino adaptable a sistemas de biofloc y recirculación.',
-    temperatura: [26, 32],
-    ph: [7.2, 8.4],
-    oxigeno: [5.5, 10],
-    salinidad: [10, 28],
-  });
+  const especies = await Promise.all(especiesBase.map((params) => ensureEspecie(params)));
 
-  const especieTrucha = await ensureEspecie({
-    nombre: 'Trucha Arcoíris',
-    nombre_cientifico: 'Oncorhynchus mykiss',
-    descripcion: 'Especie de agua fría para sistemas de flujo continuo.',
-    temperatura: [12, 18],
-    ph: [6.8, 8.0],
-    oxigeno: [7.0, 12.0],
-    salinidad: [0, 5],
-  });
+  const especieByName = new Map<string, { id_especie: number }>(
+    especies.map((especie) => [especie.nombre, { id_especie: especie.id_especie }]),
+  );
 
-  const especieByName = new Map<string, { id_especie: number }>([
-    ['Tilapia', { id_especie: especieTilapia.id_especie }],
-    ['Camarón Blanco', { id_especie: especieCamaron.id_especie }],
-    ['Trucha Arcoíris', { id_especie: especieTrucha.id_especie }],
-  ]);
+  for (const especie of especies) {
+    const config = especiesBase.find((item) => item.nombre === especie.nombre);
+    if (!config) continue;
 
-  await ensureEspecieParametro(especieTilapia.id_especie, parametroTemperatura.id_parametro, 24, 30);
-  await ensureEspecieParametro(especieTilapia.id_especie, parametroPH.id_parametro, 6.5, 8.5);
-  await ensureEspecieParametro(especieTilapia.id_especie, parametroOxigeno.id_parametro, 5, 9);
-  await ensureEspecieParametro(especieTilapia.id_especie, parametroSalinidad.id_parametro, 0, 12);
-
-  await ensureEspecieParametro(especieCamaron.id_especie, parametroTemperatura.id_parametro, 26, 32);
-  await ensureEspecieParametro(especieCamaron.id_especie, parametroPH.id_parametro, 7.2, 8.4);
-  await ensureEspecieParametro(especieCamaron.id_especie, parametroOxigeno.id_parametro, 5.5, 10);
-  await ensureEspecieParametro(especieCamaron.id_especie, parametroSalinidad.id_parametro, 10, 28);
-
-  await ensureEspecieParametro(especieTrucha.id_especie, parametroTemperatura.id_parametro, 12, 18);
-  await ensureEspecieParametro(especieTrucha.id_especie, parametroPH.id_parametro, 6.8, 8.0);
-  await ensureEspecieParametro(especieTrucha.id_especie, parametroOxigeno.id_parametro, 7.0, 12.0);
-  await ensureEspecieParametro(especieTrucha.id_especie, parametroTurbidez.id_parametro, 0, 18);
+    await ensureEspecieParametro(especie.id_especie, parametroTemperatura.id_parametro, config.temperatura[0], config.temperatura[1]);
+    await ensureEspecieParametro(especie.id_especie, parametroPH.id_parametro, config.ph[0], config.ph[1]);
+    await ensureEspecieParametro(especie.id_especie, parametroOxigeno.id_parametro, config.oxigeno[0], config.oxigeno[1]);
+    await ensureEspecieParametro(especie.id_especie, parametroSalinidad.id_parametro, config.salinidad[0], config.salinidad[1]);
+  }
 
   const installationTemplates: InstallationTemplate[] = [
     {
-      org: 'Aqua Norte',
-      branch: 'Norte - Granja Centro',
-      installation: 'Estanque Norte 1',
+      org: 'Aqua Principal',
+      branch: 'Sucursal Principal',
+      installation: 'Estanque Principal',
       species: 'Tilapia',
-      processName: 'Tilapia Ciclo Primavera - N1',
+      processName: 'Proceso Principal de Tilapia',
       status: 'en_progreso',
-      startOffsetDays: -45,
+      startOffsetDays: -30,
       durationDays: 120,
       descripcion: 'Estanque principal de engorda con aireación mecánica',
       lat: 17.9956,
@@ -564,74 +548,6 @@ async function main() {
       capacidadActual: 8600,
       volumen: 3500,
       profundidad: 1.7,
-    },
-    {
-      org: 'Aqua Norte',
-      branch: 'Norte - Granja Centro',
-      installation: 'Estanque Norte 2',
-      species: 'Camarón Blanco',
-      processName: 'Camarón Biofloc - N2',
-      status: 'en_progreso',
-      startOffsetDays: -30,
-      durationDays: 110,
-      descripcion: 'Módulo biofloc para camarón juvenil',
-      lat: 17.9948,
-      lng: -92.9291,
-      capacidadMaxima: 9500,
-      capacidadActual: 6200,
-      volumen: 2900,
-      profundidad: 1.5,
-    },
-    {
-      org: 'Aqua Norte',
-      branch: 'Norte - Granja Este',
-      installation: 'Canal Norte Este 1',
-      species: 'Trucha Arcoíris',
-      processName: 'Trucha Flujo Continuo - NE1',
-      status: 'pausado',
-      startOffsetDays: -70,
-      durationDays: 150,
-      descripcion: 'Canal de flujo continuo para agua fría',
-      lat: 18.0101,
-      lng: -92.9003,
-      capacidadMaxima: 7800,
-      capacidadActual: 5100,
-      volumen: 2100,
-      profundidad: 1.3,
-    },
-    {
-      org: 'BioAqua Sureste',
-      branch: 'Sureste - Módulo Laguna',
-      installation: 'Laguna Sureste A',
-      species: 'Tilapia',
-      processName: 'Tilapia Semi-Intensivo - SLA',
-      status: 'en_progreso',
-      startOffsetDays: -21,
-      durationDays: 100,
-      descripcion: 'Laguna de crecimiento para lote comercial',
-      lat: 17.9649,
-      lng: -92.9623,
-      capacidadMaxima: 15000,
-      capacidadActual: 9800,
-      volumen: 4200,
-      profundidad: 1.9,
-    },
-    {
-      org: 'BioAqua Sureste',
-      branch: 'Sureste - Módulo Delta',
-      installation: 'Módulo Delta B',
-      species: 'Camarón Blanco',
-      processName: 'Camarón Engorda - MDB',
-      status: 'planificado',
-      startOffsetDays: 5,
-      durationDays: 95,
-      descripcion: 'Módulo en preparación para próximo ciclo',
-      lat: 17.9469,
-      lng: -92.9164,
-      capacidadMaxima: 11000,
-      capacidadActual: 0,
-      volumen: 3100,
-      profundidad: 1.6,
     },
   ];
 
@@ -760,11 +676,6 @@ async function main() {
     await ensureCatalogoSensor('pH', 'pH', 'Sensor de potencial de hidrógeno'),
     await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto'),
     await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad'),
-    await ensureCatalogoSensor('Turbidez', 'NTU', 'Sensor de turbidez'),
-    await ensureCatalogoSensor('Nitratos', 'mg/L', 'Sensor iónico de nitratos'),
-    await ensureCatalogoSensor('Amonio', 'mg/L', 'Sensor para concentración de amonio'),
-    await ensureCatalogoSensor('Conductividad', 'uS/cm', 'Sensor de conductividad eléctrica'),
-    await ensureCatalogoSensor('ORP', 'mV', 'Sensor de potencial redox'),
   ];
 
   const sensoresInstalados: Array<{
@@ -811,8 +722,7 @@ async function main() {
     await ensureAssignment({ idUsuario: superadmin.id_usuario, idSucursal: branchId, idInstalacion: null });
   }
 
-  const adminBranchIds = allBranchIds.slice(0, Math.max(1, Math.ceil(allBranchIds.length / 2)));
-  for (const branchId of adminBranchIds) {
+  for (const branchId of allBranchIds) {
     await ensureAssignment({ idUsuario: admin.id_usuario, idSucursal: branchId, idInstalacion: null });
   }
 
@@ -820,23 +730,15 @@ async function main() {
   const firstAdminFacility = sensoresInstalados[0]?.id_instalacion ?? seededInstallations[0]?.id_instalacion;
   if (firstAdminFacility) {
     await ensureAssignment({
-      idUsuario: admin.id_usuario,
+      idUsuario: superadmin.id_usuario,
       idSucursal: null,
       idInstalacion: firstAdminFacility,
     });
-  }
-
-  const operatorFacility = sensoresInstalados[1]?.id_instalacion ?? seededInstallations[1]?.id_instalacion ?? firstAdminFacility;
-  if (operatorFacility) {
-    const branchOfOperatorFacility = await prisma.instalacion.findUnique({
-      where: { id_instalacion: operatorFacility },
-      select: { id_organizacion_sucursal: true },
-    });
 
     await ensureAssignment({
-      idUsuario: operador.id_usuario,
-      idSucursal: branchOfOperatorFacility?.id_organizacion_sucursal ?? null,
-      idInstalacion: operatorFacility,
+      idUsuario: admin.id_usuario,
+      idSucursal: null,
+      idInstalacion: firstAdminFacility,
     });
   }
 
@@ -912,7 +814,15 @@ async function main() {
     }
   }
 
-  const alertCandidates = sensoresInstalados.slice(0, 8);
+  if (sensoresInstalados.length > 0) {
+    await refreshLecturaAggregatesWindow({
+      from: historyStart,
+      to: now,
+      sensorIds: sensoresInstalados.map((sensor) => sensor.id_sensor_instalado),
+    });
+  }
+
+  const alertCandidates = sensoresInstalados.slice(0, 4);
   for (const sensor of alertCandidates) {
     const latest = await prisma.lectura.findFirst({
       where: { id_sensor_instalado: sensor.id_sensor_instalado },
@@ -956,7 +866,6 @@ async function main() {
   console.log('Seeding completed successfully.');
   console.log(`Superadmin: superadmin@example.com / ${DEFAULT_PASSWORD}`);
   console.log(`Admin: admin@example.com / ${DEFAULT_PASSWORD}`);
-  console.log(`Operador: operador@example.com / ${DEFAULT_PASSWORD}`);
   console.log(`Instalaciones: ${totalInstalaciones}`);
   console.log(`Sensores instalados: ${totalSensores}`);
   console.log(`Lecturas (${HISTORY_DAYS} días): ${totalLecturas}`);

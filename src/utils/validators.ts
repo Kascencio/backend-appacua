@@ -27,6 +27,35 @@ export const promediosQuerySchema = z.object({
   to: z.string().datetime().optional()
 });
 
+const positiveIntArray = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => String(entry).split(','))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'number') {
+    return [value];
+  }
+
+  return value;
+}, z.array(z.coerce.number().int().positive()).min(1).max(60));
+
+export const promediosBatchQuerySchema = z.object({
+  bucketMinutes: z.coerce.number().int().min(1).max(1440),
+  sensorInstaladoIds: positiveIntArray,
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
 export const wsFilterSchema = z.object({
   sensorInstaladoId: z.coerce.number().int().positive().optional(),
   instalacionId: z.coerce.number().int().positive().optional()
@@ -147,6 +176,46 @@ export const updateSensorInstaladoSchema = z.object({
   id_lectura: z.coerce.number().int().positive().optional(),
 });
 
+export const crecimientoOstionCapturaSchema = z.object({
+  id_crecimiento_ostion_captura: z.coerce.number().int().positive().optional(),
+  numero_captura: z.coerce.number().int().min(1).max(1000).optional(),
+  fecha_programada: prismaDateOptional,
+  fecha_real: prismaDateOptional.nullable().optional(),
+  estado: z.enum(['pendiente', 'parcial', 'completada']).optional(),
+  observaciones: z.string().max(5000).optional(),
+});
+
+export const crecimientoOstionSchema = z.object({
+  capturas_requeridas: z.coerce.number().int().min(1).max(100),
+  lotes_por_captura: z.coerce.number().int().min(1).max(100),
+  calendario_modo: z.enum(['automatico', 'manual']).optional().default('automatico'),
+  capturas: z.array(crecimientoOstionCapturaSchema).max(200).optional(),
+});
+
+export const updateCrecimientoOstionCapturaSchema = z.object({
+  fecha_programada: prismaDateOptional,
+  fecha_real: prismaDateOptional.nullable().optional(),
+  estado: z.enum(['pendiente', 'parcial', 'completada']).optional(),
+  observaciones: z.string().max(5000).optional(),
+});
+
+export const createExtraCrecimientoOstionCapturaSchema = updateCrecimientoOstionCapturaSchema.extend({
+  fecha_programada: prismaDate,
+});
+
+export const crecimientoOstionMedicionSchema = z.object({
+  lote_numero: z.coerce.number().int().min(1).max(100),
+  valor: z.coerce.number().finite(),
+  unidad: z.enum(['cm', 'kg']),
+  observaciones: z.string().max(5000).optional(),
+});
+
+export const crecimientoOstionMedicionesSchema = z.object({
+  fecha_real: prismaDateOptional.nullable().optional(),
+  observaciones: z.string().max(5000).optional(),
+  mediciones: z.array(crecimientoOstionMedicionSchema).min(1).max(100),
+});
+
 // CRUD Schemas - Proceso
 export const createProcesoSchema = z.object({
   id_especie: z.coerce.number().int().positive(),
@@ -160,6 +229,7 @@ export const createProcesoSchema = z.object({
   fecha_final: prismaDate,
   fecha_fin_real: prismaDateOptional,
   motivo_cierre: z.string().max(5000).optional(),
+  crecimiento_ostion: crecimientoOstionSchema.optional(),
 }).refine(v => v.fecha_final > v.fecha_inicio, {
   message: 'fecha_final debe ser posterior a fecha_inicio'
 });
@@ -176,6 +246,7 @@ export const updateProcesoSchema = z.object({
   fecha_final: prismaDateOptional,
   fecha_fin_real: prismaDateOptional,
   motivo_cierre: z.string().max(5000).optional(),
+  crecimiento_ostion: crecimientoOstionSchema.optional(),
 }).superRefine((v, ctx) => {
   if (v.fecha_inicio && v.fecha_final && v.fecha_final <= v.fecha_inicio) {
     ctx.addIssue({

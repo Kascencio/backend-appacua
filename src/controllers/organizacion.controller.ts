@@ -159,9 +159,16 @@ export async function getOrganizaciones(
     const organizaciones = await prisma.organizacion.findMany({
       where,
       include: {
-        estados: true,
-        municipios: true,
-        organizacion_sucursal: true,
+        estados: {
+          select: {
+            nombre: true,
+          },
+        },
+        municipios: {
+          select: {
+            nombre: true,
+          },
+        },
       },
       orderBy: {
         fecha_creacion: 'desc',
@@ -363,10 +370,22 @@ export async function getSucursales(
     const sucursales = await prisma.organizacion_sucursal.findMany({
       where,
       include: {
-        organizacion: true,
-        instalacion: true,
-        estados: true,
-        municipios: true,
+        organizacion: {
+          select: {
+            id_organizacion: true,
+            nombre: true,
+          },
+        },
+        estados: {
+          select: {
+            nombre: true,
+          },
+        },
+        municipios: {
+          select: {
+            nombre: true,
+          },
+        },
       },
       orderBy: {
         fecha_creacion: 'desc',

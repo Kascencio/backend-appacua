@@ -1,4 +1,5 @@
 import { prisma } from '../repositories/prisma.js';
+import { enqueueLecturaAggregatesRefresh } from './lectura-aggregates.service.js';
 import { broadcastLecturaCreated, broadcastNotification } from './ws.lecturas.server.js';
 import { sendAlertToTelegram } from './telegram.service.js';
 
@@ -161,6 +162,30 @@ export function startLecturasPoller(intervalMs = 750) {
           },
         }).catch(() => undefined);
       }
+
+      if (rows.length > 0) {
+        const sensorIds = [...new Set(
+          rows
+            .map((row) => Number(row.id_sensor_instalado))
+            .filter((value) => Number.isFinite(value) && value > 0),
+        )];
+        const timestamps = rows
+          .map((row) => new Date(row.tomada_en))
+          .filter((value) => !Number.isNaN(value.getTime()))
+          .sort((a, b) => a.getTime() - b.getTime());
+
+        const from = timestamps[0];
+        const to = timestamps[timestamps.length - 1];
+
+        if (from && to && sensorIds.length > 0) {
+          await enqueueLecturaAggregatesRefresh({
+            from,
+            to,
+            sensorIds,
+          }).catch(() => undefined);
+        }
+      }
+
       if (rows.length) {
         const maxId = rows[rows.length - 1].id_lectura;
         lastSeenId = BigInt(maxId);

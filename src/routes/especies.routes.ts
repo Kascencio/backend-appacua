@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import * as especiesController from '../controllers/especies.controller.js';
+import * as crecimientoOstionController from '../controllers/crecimiento-ostion.controller.js';
 
 export async function registerEspeciesRoutes(app: FastifyInstance) {
   // Catálogo Especies
@@ -34,4 +35,9 @@ export async function registerEspeciesRoutes(app: FastifyInstance) {
   app.get('/api/procesos/:id', especiesController.getProcesoById);
   app.put('/api/procesos/:id', especiesController.updateProceso);
   app.delete('/api/procesos/:id', especiesController.deleteProceso);
+  app.get('/api/procesos/:id/crecimiento-ostion', crecimientoOstionController.getProcesoCrecimientoOstion);
+  app.put('/api/procesos/:id/crecimiento-ostion', crecimientoOstionController.updateProcesoCrecimientoOstion);
+  app.post('/api/procesos/:id/crecimiento-ostion/capturas', crecimientoOstionController.createProcesoCrecimientoOstionCaptura);
+  app.put('/api/procesos/:id/crecimiento-ostion/capturas/:capturaId', crecimientoOstionController.updateProcesoCrecimientoOstionCapturaById);
+  app.post('/api/procesos/:id/crecimiento-ostion/capturas/:capturaId/mediciones', crecimientoOstionController.saveProcesoCrecimientoOstionMediciones);
 }

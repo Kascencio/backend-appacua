@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ts-node-dev --transpile-only --respawn src/index.ts",
+    "dev": "node scripts/dev.mjs",
     "build": "rimraf dist && tsc && prisma generate",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
-    "seed": "ts-node scripts/seed.ts"
+    "seed": "node --import ./scripts/register-ts-node.mjs scripts/seed.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

@@ -3,6 +3,7 @@ import {
   getLecturas,
   getResumenHorario,
   getPromedios,
+  getPromediosBatch,
   getReporteXML,
   getLecturasProceso,
   getLecturasPorProceso
@@ -14,5 +15,6 @@ export async function registerLecturasRoutes(app: FastifyInstance) {
   app.get('/api/lecturas-por-proceso', getLecturasPorProceso);
   app.get('/api/resumen-horario', getResumenHorario);
   app.get('/api/promedios', getPromedios);
+  app.get('/api/promedios-batch', getPromediosBatch);
   app.get('/api/reportes/xml', getReporteXML);
 }
