@@ -54,7 +54,7 @@ if (!normalizedDatabaseUrl || !normalizedDatabaseUrl.startsWith('mysql://')) {
 
 export const config = {
   env: process.env.NODE_ENV || 'production',
-  port: Number(process.env.PORT || 3200),
+  port: Number(process.env.PORT || 3100),
   host: process.env.HOST || '0.0.0.0',
   jwtSecret: process.env.JWT_SECRET || 'change_me',
   databaseUrl: normalizedDatabaseUrl,

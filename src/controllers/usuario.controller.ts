@@ -574,9 +574,10 @@ export async function createUsuario(req: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function login(req: FastifyRequest, reply: FastifyReply) {
+  let resolvedEmail = '';
   try {
     const { correo, email, password } = (req.body || {}) as Record<string, unknown>;
-    const resolvedEmail = String(correo ?? email ?? '').trim().toLowerCase();
+    resolvedEmail = String(correo ?? email ?? '').trim().toLowerCase();
 
     const usuario = await prisma.usuario.findUnique({
       where: { correo: resolvedEmail },
@@ -618,6 +619,13 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
 
     reply.send({ token, usuario: serializeUsuario(usuario) });
   } catch (error: any) {
+    req.log.error(
+      {
+        err: error,
+        correo: resolvedEmail,
+      },
+      'Error during login'
+    );
     reply.status(500).send({ error: error.message });
   }
 }
