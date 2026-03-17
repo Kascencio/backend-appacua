@@ -38,7 +38,7 @@ Este documento concentra lo necesario para operar, mantener y desplegar.
 Minimas en `.env`:
 ```env
 NODE_ENV=production
-PORT=3300
+PORT=3200
 HOST=0.0.0.0
 
 DATABASE_URL=mysql://USER:PASS@HOST:3306/DB_NAME
@@ -91,7 +91,7 @@ docker build -t aqua-backend:latest .
 Run local:
 ```bash
 docker run -d --name aqua-backend \
-  -p 3300:3300 \
+  -p 3200:3200 \
   --env-file .env \
   aqua-backend:latest
 ```
@@ -199,26 +199,26 @@ Authorization: Bearer <JWT_TOKEN>
 #### 8.5.5 Ejemplos rapidos (cURL)
 Login:
 ```bash
-curl -X POST http://localhost:3300/api/login \
+curl -X POST http://localhost:3200/api/login \
   -H "Content-Type: application/json" \
   -d '{"correo":"admin@example.com","password":"TU_PASSWORD"}'
 ```
 
 Listar usuarios (requiere token):
 ```bash
-curl http://localhost:3300/api/usuarios \
+curl http://localhost:3200/api/usuarios \
   -H "Authorization: Bearer TU_JWT"
 ```
 
 Lecturas de sensor instalado:
 ```bash
-curl "http://localhost:3300/api/lecturas?sensorInstaladoId=1&from=2026-02-20T00:00:00Z&to=2026-02-26T23:59:59Z&limit=500" \
+curl "http://localhost:3200/api/lecturas?sensorInstaladoId=1&from=2026-02-20T00:00:00Z&to=2026-02-26T23:59:59Z&limit=500" \
   -H "Authorization: Bearer TU_JWT"
 ```
 
 Promedios por bucket (analitica):
 ```bash
-curl "http://localhost:3300/api/promedios?sensorInstaladoId=1&bucketMinutes=15&from=2026-02-20T00:00:00Z&to=2026-02-26T23:59:59Z" \
+curl "http://localhost:3200/api/promedios?sensorInstaladoId=1&bucketMinutes=15&from=2026-02-20T00:00:00Z&to=2026-02-26T23:59:59Z" \
   -H "Authorization: Bearer TU_JWT"
 ```
 
@@ -233,10 +233,10 @@ curl "http://localhost:3300/api/promedios?sensorInstaladoId=1&bucketMinutes=15&f
 ## 9) WebSocket
 Canales:
 - Lecturas:
-  - `ws://HOST:3300/ws/lecturas?sensorInstaladoId=<id>`
-  - `ws://HOST:3300/ws/lecturas?instalacionId=<id>`
+  - `ws://HOST:3200/ws/lecturas?sensorInstaladoId=<id>`
+  - `ws://HOST:3200/ws/lecturas?instalacionId=<id>`
 - Notificaciones:
-  - `ws://HOST:3300/ws/notificaciones`
+  - `ws://HOST:3200/ws/notificaciones`
 
 Payload tipico:
 ```json

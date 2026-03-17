@@ -7,7 +7,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 ENV HOST=0.0.0.0
-ENV PORT=3300
+ENV PORT=3200
 
 FROM base AS builder
 
@@ -34,6 +34,6 @@ RUN npm prune --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
-EXPOSE 3300
+EXPOSE 3200
 
 CMD ["node", "dist/index.js"]
