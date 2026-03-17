@@ -25,7 +25,7 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      DATABASE_URL: mysql://${MYSQL_USER:-aqua_user}:${MYSQL_PASSWORD:-aqua_password}@mysql:3306/${MYSQL_DATABASE:-aqua_sonda}
+      DATABASE_URL: mysql://${MYSQL_USER:-aqua_user}:${MYSQL_PASSWORD:-aqua_password}@${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-aqua_sonda}
     networks:
       - aqua-backend-network
 
