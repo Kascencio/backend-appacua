@@ -158,6 +158,7 @@ function extractAccessToken(req: FastifyRequest): string | null {
 export async function getRequestScope(req: FastifyRequest): Promise<RequestScope> {
   const token = extractAccessToken(req);
   if (!token) {
+    req.log.warn({ url: req.url, method: req.method }, 'Access token missing');
     throw createHttpError(401, 'Token de acceso requerido');
   }
 
@@ -165,11 +166,13 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
   try {
     decoded = req.server.jwt.verify(token) as DecodedToken;
   } catch {
+    req.log.warn({ url: req.url, method: req.method }, 'Invalid or expired access token');
     throw createHttpError(401, 'Token inválido o expirado');
   }
 
   const idUsuario = toPositiveInt(decoded.id_usuario ?? decoded.idUsuario ?? decoded.sub);
   if (!idUsuario) {
+    req.log.warn({ url: req.url, method: req.method, decoded }, 'Token missing user identifier');
     throw createHttpError(401, 'Token inválido');
   }
 
@@ -196,11 +199,13 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
 
   if (!usuario) {
     requestScopeCache.delete(token);
+    req.log.warn({ url: req.url, method: req.method, idUsuario }, 'User from token was not found');
     throw createHttpError(401, 'Usuario no encontrado');
   }
 
   if (usuario.estado !== 'activo') {
     requestScopeCache.delete(token);
+    req.log.warn({ url: req.url, method: req.method, idUsuario }, 'Inactive user attempted access');
     throw createHttpError(403, 'Usuario inactivo');
   }
 

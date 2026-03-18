@@ -617,7 +617,7 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
       role,
     });
 
-    reply.send({ token, usuario: serializeUsuario(usuario) });
+    return reply.send({ token, usuario: serializeUsuario(usuario) });
   } catch (error: any) {
     req.log.error(
       {
@@ -626,7 +626,7 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
       },
       'Error during login'
     );
-    reply.status(500).send({ error: error.message });
+    return reply.status(500).send({ error: error.message });
   }
 }
 
