@@ -1,9 +1,6 @@
 services:
   aqua-backend:
     image: ${DOCKER_IMAGE:-keaf13/aqua-backend:latest}
-    container_name: aqua-backend
-    restart: unless-stopped
-    pull_policy: always
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       HOST: 0.0.0.0
@@ -31,3 +28,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    deploy:
+      restart_policy:
+        condition: any
