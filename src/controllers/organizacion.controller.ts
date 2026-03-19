@@ -70,6 +70,25 @@ function serializeSucursal(sucursal: any) {
   };
 }
 
+function replyWithError(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  statusCode: number,
+  error: unknown,
+  fallbackMessage: string
+) {
+  const message = typeof (error as { message?: unknown })?.message === 'string' && (error as { message?: string }).message
+    ? (error as { message: string }).message
+    : fallbackMessage;
+
+  if (reply.sent) {
+    req.log.warn({ err: error, statusCode }, 'Se omitio una segunda respuesta porque la solicitud ya fue respondida');
+    return reply;
+  }
+
+  return reply.status(statusCode).send({ error: message });
+}
+
 export async function createOrganizacion(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
@@ -111,9 +130,9 @@ export async function createOrganizacion(req: FastifyRequest, reply: FastifyRepl
       id_municipio: body.id_municipio ?? undefined,
     };
     const organizacion = await prisma.organizacion.create({ data });
-    reply.status(201).send(serializeOrganizacion(organizacion));
+    return reply.status(201).send(serializeOrganizacion(organizacion));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message || 'Error al crear organización' });
+    return replyWithError(req, reply, 400, error, 'Error al crear organización');
   }
 }
 
@@ -175,9 +194,9 @@ export async function getOrganizaciones(
       },
     });
 
-    reply.send(organizaciones.map(serializeOrganizacion));
+    return reply.send(organizaciones.map(serializeOrganizacion));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    return replyWithError(req, reply, 500, error, 'Error al consultar organizaciones');
   }
 }
 
@@ -207,9 +226,9 @@ export async function getOrganizacionById(req: FastifyRequest<{ Params: { id: st
       return reply.status(404).send({ error: 'Organización no encontrada' });
     }
     
-    reply.send(serializeOrganizacion(organizacion));
+    return reply.send(serializeOrganizacion(organizacion));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    return replyWithError(req, reply, 500, error, 'Error al consultar organización');
   }
 }
 
@@ -262,9 +281,9 @@ export async function updateOrganizacion(req: FastifyRequest<{ Params: { id: str
       data
     });
     
-    reply.send(serializeOrganizacion(organizacion));
+    return reply.send(serializeOrganizacion(organizacion));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message || 'Error al actualizar organización' });
+    return replyWithError(req, reply, 400, error, 'Error al actualizar organización');
   }
 }
 
@@ -281,9 +300,9 @@ export async function deleteOrganizacion(req: FastifyRequest<{ Params: { id: str
       where: { id_organizacion: id }
     });
     
-    reply.status(204).send();
+    return reply.status(204).send();
   } catch (error: any) {
-    reply.status(400).send({ error: error.message || 'Error al eliminar organización' });
+    return replyWithError(req, reply, 400, error, 'Error al eliminar organización');
   }
 }
 
@@ -332,9 +351,9 @@ export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
         estado: (body.estado ?? 'activa') as 'activa' | 'inactiva'
       }
     });
-    reply.status(201).send(serializeSucursal(sucursal));
+    return reply.status(201).send(serializeSucursal(sucursal));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    return replyWithError(req, reply, 400, error, 'Error al crear sucursal');
   }
 }
 
@@ -392,9 +411,9 @@ export async function getSucursales(
       },
     });
 
-    reply.send(sucursales.map(serializeSucursal));
+    return reply.send(sucursales.map(serializeSucursal));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    return replyWithError(req, reply, 500, error, 'Error al consultar sucursales');
   }
 }
 
@@ -425,9 +444,9 @@ export async function getSucursalById(req: FastifyRequest<{ Params: { id: string
       return reply.status(404).send({ error: 'Sucursal no encontrada' });
     }
     
-    reply.send(serializeSucursal(sucursal));
+    return reply.send(serializeSucursal(sucursal));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    return replyWithError(req, reply, 500, error, 'Error al consultar sucursal');
   }
 }
 
@@ -480,9 +499,9 @@ export async function updateSucursal(req: FastifyRequest<{ Params: { id: string 
       data
     });
     
-    reply.send(serializeSucursal(sucursal));
+    return reply.send(serializeSucursal(sucursal));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    return replyWithError(req, reply, 400, error, 'Error al actualizar sucursal');
   }
 }
 
@@ -499,8 +518,8 @@ export async function deleteSucursal(req: FastifyRequest<{ Params: { id: string 
       where: { id_organizacion_sucursal: id }
     });
     
-    reply.status(204).send();
+    return reply.status(204).send();
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    return replyWithError(req, reply, 400, error, 'Error al eliminar sucursal');
   }
 }
