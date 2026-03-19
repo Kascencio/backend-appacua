@@ -20,11 +20,17 @@ if [[ ! -f "$STACK_FILE" ]]; then
   exit 1
 fi
 
+if [[ "$IMAGE_NAME" != *"/"* ]]; then
+  echo "Refusing to deploy image '${IMAGE_NAME}' to Swarm."
+  echo "Use a registry image such as 'usuario/aqua-backend:latest' or 'ghcr.io/org/aqua-backend:latest'."
+  exit 1
+fi
+
 echo "[1/4] Validating stack file: ${STACK_FILE}"
 docker stack config -c "$STACK_FILE" >/dev/null
 
 echo "[2/4] Deploying stack ${STACK_NAME} with image ${IMAGE_NAME}"
-docker stack deploy -c "$STACK_FILE" "$STACK_NAME"
+docker stack deploy --with-registry-auth -c "$STACK_FILE" "$STACK_NAME"
 
 echo "[3/4] Stack services:"
 docker stack services "$STACK_NAME"

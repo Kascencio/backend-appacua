@@ -121,6 +121,7 @@ Portainer (recomendado):
 Docker Swarm por CLI:
 ```bash
 docker swarm init
+export DOCKER_IMAGE=usuario/aqua-backend:latest
 STACK_NAME=aqua-backend ./scripts/deploy-swarm.sh
 ```
 
@@ -128,6 +129,7 @@ Notas operativas:
 - `docker-compose.yml` es para `docker compose`, no para `docker stack deploy`.
 - `docker stack deploy` ignora opciones como `build`, `restart` y `container_name`; para Swarm o Portainer usa `portainer-stack.yml`.
 - La red `DOCKER_NETWORK` la crean Compose o Swarm automaticamente; ya no hace falta precrear una red `external`.
+- En Swarm la imagen debe existir en un registry accesible para el nodo o nodos; `aqua-backend:latest` local no sirve para `stack deploy`.
 
 ## 8) Endpoints principales
 ### 8.1 Salud
