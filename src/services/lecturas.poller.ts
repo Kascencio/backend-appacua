@@ -9,6 +9,21 @@ type RangeRule = {
 };
 
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutos por sensor
+const pollerDiagnostics = {
+  started: false,
+  interval_ms: 0,
+  running: false,
+  last_tick_started_at: null as string | null,
+  last_tick_finished_at: null as string | null,
+  last_success_at: null as string | null,
+  last_error_at: null as string | null,
+  last_error_message: null as string | null,
+  last_batch_size: 0,
+  last_processed_sensor_count: 0,
+  last_seen_id: '0',
+  alerts_created_total: 0,
+  last_alert_created_at: null as string | null,
+};
 
 const RANGE_RULES: Record<string, RangeRule> = {
   temperatura: { min: 20, max: 32 },
@@ -53,14 +68,19 @@ export function startLecturasPoller(intervalMs = 750) {
   let lastSeenId = 0n;
   let running = false;
   const lastAlertBySensor = new Map<number, number>();
+  pollerDiagnostics.started = true;
+  pollerDiagnostics.interval_ms = intervalMs;
 
   async function tick() {
     if (running) return;
     running = true;
+    pollerDiagnostics.running = true;
+    pollerDiagnostics.last_tick_started_at = new Date().toISOString();
     try {
       if (lastSeenId === 0n) {
         const max = await prisma.lectura.aggregate({ _max: { id_lectura: true } });
         lastSeenId = BigInt(max._max.id_lectura ?? 0);
+        pollerDiagnostics.last_seen_id = lastSeenId.toString();
       }
       const rows = await prisma.$queryRawUnsafe<any[]>(`
         SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
@@ -73,6 +93,8 @@ export function startLecturasPoller(intervalMs = 750) {
         ORDER BY l.id_lectura ASC
         LIMIT 1000
       `, lastSeenId.toString());
+
+      pollerDiagnostics.last_batch_size = rows.length;
 
       for (const r of rows) {
         const ev = {
@@ -147,6 +169,9 @@ export function startLecturasPoller(intervalMs = 750) {
           data: alertPayload,
         });
 
+        pollerDiagnostics.alerts_created_total += 1;
+        pollerDiagnostics.last_alert_created_at = new Date().toISOString();
+
         void sendAlertToTelegram({
           id_alertas: createdAlert.id_alertas,
           descripcion,
@@ -169,6 +194,7 @@ export function startLecturasPoller(intervalMs = 750) {
             .map((row) => Number(row.id_sensor_instalado))
             .filter((value) => Number.isFinite(value) && value > 0),
         )];
+        pollerDiagnostics.last_processed_sensor_count = sensorIds.length;
         const timestamps = rows
           .map((row) => new Date(row.tomada_en))
           .filter((value) => !Number.isNaN(value.getTime()))
@@ -189,14 +215,28 @@ export function startLecturasPoller(intervalMs = 750) {
       if (rows.length) {
         const maxId = rows[rows.length - 1].id_lectura;
         lastSeenId = BigInt(maxId);
+        pollerDiagnostics.last_seen_id = lastSeenId.toString();
       }
+      pollerDiagnostics.last_success_at = new Date().toISOString();
+      pollerDiagnostics.last_error_at = null;
+      pollerDiagnostics.last_error_message = null;
     } catch (e) {
-      // minimal log
-      // console.error('[poller] error', e);
+      pollerDiagnostics.last_error_at = new Date().toISOString();
+      pollerDiagnostics.last_error_message =
+        e instanceof Error ? e.message : String(e);
     } finally {
       running = false;
+      pollerDiagnostics.running = false;
+      pollerDiagnostics.last_tick_finished_at = new Date().toISOString();
     }
   }
 
   setInterval(tick, intervalMs);
+}
+
+export function getLecturasPollerDiagnostics() {
+  return {
+    ...pollerDiagnostics,
+    alert_cooldown_ms: ALERT_COOLDOWN_MS,
+  };
 }
