@@ -1,5 +1,10 @@
 import { prisma } from '../repositories/prisma.js';
-import { promediosBatchQuerySchema, rangeQuerySchema, promediosQuerySchema } from '../utils/validators.js';
+import {
+  createLecturasBodySchema,
+  promediosBatchQuerySchema,
+  rangeQuerySchema,
+  promediosQuerySchema,
+} from '../utils/validators.js';
 import { buildReportXML } from '../utils/xml.helper.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import {
@@ -98,6 +103,30 @@ type SensorAccessCacheEntry = {
   allowed: boolean;
 };
 
+type CreateLecturaItemInput = {
+  sensorInstaladoId?: number;
+  id_sensor_instalado?: number;
+  sensor_instalado_id?: number;
+  valor: number;
+  tomada_en?: Date;
+  timestamp?: Date;
+  fecha?: Date;
+  hora?: Date;
+};
+
+type CreateLecturaRecord = {
+  id_lectura: number;
+  id_sensor_instalado: number;
+  sensor_instalado_id: number;
+  valor: number;
+  tomada_en: string;
+  fecha: Date;
+  hora: Date;
+  id_instalacion: number | null;
+  tipo_medida: string;
+  unidad_medida: string | null;
+};
+
 const PROCESO_PAYLOAD_CACHE_TTL_MS = Number(process.env.PROCESO_PAYLOAD_CACHE_TTL_MS ?? 8_000);
 const PROCESO_PAYLOAD_CACHE_MAX_ENTRIES = 150;
 const procesoPayloadCache = new Map<string, ProcesoPayloadCacheEntry>();
@@ -110,6 +139,7 @@ const promediosInflight = new Map<string, Promise<PromediosPayloadItem[]>>();
 const promediosBatchCache = new Map<string, PromediosBatchCacheEntry>();
 const promediosBatchInflight = new Map<string, Promise<PromediosBatchPayload>>();
 const sensorAccessCache = new Map<string, SensorAccessCacheEntry>();
+const sensorIngestApiKey = String(process.env.SENSOR_INGEST_API_KEY ?? '').trim();
 
 function normalizeRangeQuery(rawQuery: any) {
   return rangeQuerySchema.parse({
@@ -143,10 +173,30 @@ function normalizePromediosBatchRequest(rawQuery: any) {
   });
 }
 
+function normalizeCreateLecturasRequest(rawBody: any): { lecturas: CreateLecturaItemInput[]; single: boolean } {
+  const parsed = createLecturasBodySchema.parse(rawBody);
+
+  if (Array.isArray(parsed)) {
+    return { lecturas: parsed, single: false };
+  }
+
+  if ('lecturas' in parsed) {
+    return { lecturas: parsed.lecturas, single: false };
+  }
+
+  return { lecturas: [parsed], single: true };
+}
+
 function combineFechaHoraISO(fecha: Date, hora: Date): string {
   const datePart = fecha.toISOString().slice(0, 10);
   const timePart = hora.toISOString().slice(11, 19);
   return new Date(`${datePart}T${timePart}Z`).toISOString();
+}
+
+function combineFechaHora(fecha: Date, hora: Date): Date {
+  const datePart = fecha.toISOString().slice(0, 10);
+  const timePart = hora.toISOString().slice(11, 19);
+  return new Date(`${datePart}T${timePart}Z`);
 }
 
 function toPositiveInt(value: unknown): number | null {
@@ -260,6 +310,47 @@ function setCachedSensorAccess(scope: RequestScope, sensorInstaladoId: number, a
     expiresAt: Date.now() + SENSOR_ACCESS_CACHE_TTL_MS,
     allowed,
   });
+}
+
+function invalidateLecturaReadCaches(): void {
+  procesoPayloadCache.clear();
+  promediosCache.clear();
+  promediosInflight.clear();
+  promediosBatchCache.clear();
+  promediosBatchInflight.clear();
+}
+
+function resolveCreateLecturaTimestamp(item: CreateLecturaItemInput): Date {
+  if (item.tomada_en instanceof Date) return item.tomada_en;
+  if (item.timestamp instanceof Date) return item.timestamp;
+  if (item.fecha instanceof Date && item.hora instanceof Date) {
+    return combineFechaHora(item.fecha, item.hora);
+  }
+  if (item.fecha instanceof Date) return item.fecha;
+  return new Date();
+}
+
+function buildLecturaDateParts(timestamp: Date): { fecha: Date; hora: Date } {
+  const fecha = new Date(timestamp);
+  fecha.setHours(0, 0, 0, 0);
+
+  const hh = String(timestamp.getHours()).padStart(2, '0');
+  const mm = String(timestamp.getMinutes()).padStart(2, '0');
+  const ss = String(timestamp.getSeconds()).padStart(2, '0');
+  const hora = new Date(`1970-01-01T${hh}:${mm}:${ss}Z`);
+
+  return { fecha, hora };
+}
+
+function normalizeHeaderValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return String(value ?? '').trim();
+}
+
+function canIngestLecturas(req: FastifyRequest): boolean {
+  if (!sensorIngestApiKey) return true;
+  const provided = normalizeHeaderValue(req.headers['x-sensor-ingest-key'] as string | string[] | undefined);
+  return provided.length > 0 && provided === sensorIngestApiKey;
 }
 
 function buildPromediosCacheKey(
@@ -813,6 +904,119 @@ export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
       unidad: row.unidad_medida,
       unidad_medida: row.unidad_medida,
     })));
+  } catch (error: any) {
+    reply.status(400).send({ error: error.message });
+  }
+}
+
+export async function createLecturas(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    if (!canIngestLecturas(req)) {
+      return reply.status(401).send({ error: 'No autorizado para insertar lecturas' });
+    }
+
+    const payload = normalizeCreateLecturasRequest(req.body as any);
+    const requestedSensorIds = [...new Set(
+      payload.lecturas
+        .map((item) => item.sensorInstaladoId ?? item.id_sensor_instalado ?? item.sensor_instalado_id ?? 0)
+        .filter((value) => Number.isInteger(value) && value > 0),
+    )];
+
+    const sensors = await prisma.sensor_instalado.findMany({
+      where: {
+        id_sensor_instalado: { in: requestedSensorIds },
+      },
+      select: {
+        id_sensor_instalado: true,
+        id_instalacion: true,
+        catalogo_sensores: {
+          select: {
+            nombre: true,
+            unidad_medida: true,
+          },
+        },
+      },
+    });
+
+    const sensorById = new Map(
+      sensors.map((sensor) => [sensor.id_sensor_instalado, sensor]),
+    );
+
+    const missingSensorIds = requestedSensorIds.filter((sensorId) => !sensorById.has(sensorId));
+    if (missingSensorIds.length > 0) {
+      return reply.status(404).send({
+        error: `Sensores instalados no encontrados: ${missingSensorIds.join(', ')}`,
+      });
+    }
+
+    const createdLecturas: CreateLecturaRecord[] = [];
+
+    for (const item of payload.lecturas) {
+      const sensorId = item.sensorInstaladoId ?? item.id_sensor_instalado ?? item.sensor_instalado_id;
+      if (!sensorId) {
+        return reply.status(400).send({ error: 'sensorInstaladoId es obligatorio' });
+      }
+
+      const sensor = sensorById.get(sensorId);
+      if (!sensor) {
+        return reply.status(404).send({ error: `Sensor instalado ${sensorId} no encontrado` });
+      }
+
+      const timestamp = resolveCreateLecturaTimestamp(item);
+      if (Number.isNaN(timestamp.getTime())) {
+        return reply.status(400).send({ error: `Timestamp invalido para el sensor ${sensorId}` });
+      }
+
+      const { fecha, hora } = buildLecturaDateParts(timestamp);
+      const created = await prisma.$transaction(async (tx) => {
+        const lectura = await tx.lectura.create({
+          data: {
+            id_sensor_instalado: sensorId,
+            valor: item.valor,
+            fecha,
+            hora,
+          },
+          select: {
+            id_lectura: true,
+            id_sensor_instalado: true,
+            valor: true,
+            fecha: true,
+            hora: true,
+          },
+        });
+
+        await tx.sensor_instalado.update({
+          where: { id_sensor_instalado: sensorId },
+          data: { id_lectura: lectura.id_lectura },
+        });
+
+        return lectura;
+      });
+
+      createdLecturas.push({
+        id_lectura: created.id_lectura,
+        id_sensor_instalado: created.id_sensor_instalado,
+        sensor_instalado_id: created.id_sensor_instalado,
+        valor: Number(created.valor),
+        tomada_en: combineFechaHoraISO(created.fecha as Date, created.hora as Date),
+        fecha: created.fecha,
+        hora: created.hora,
+        id_instalacion: sensor.id_instalacion ?? null,
+        tipo_medida: sensor.catalogo_sensores.nombre,
+        unidad_medida: sensor.catalogo_sensores.unidad_medida ?? null,
+      });
+    }
+
+    invalidateLecturaReadCaches();
+
+    if (payload.single && createdLecturas.length === 1) {
+      return reply.status(201).send(createdLecturas[0]);
+    }
+
+    return reply.status(201).send({
+      total: createdLecturas.length,
+      lecturas: createdLecturas,
+    });
   } catch (error: any) {
     reply.status(400).send({ error: error.message });
   }

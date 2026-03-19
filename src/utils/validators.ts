@@ -56,6 +56,47 @@ export const promediosBatchQuerySchema = z.object({
   to: z.string().datetime().optional(),
 });
 
+const lecturaTimestampFieldOptional = z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  return parseDateForPrisma(value);
+}, z.date().optional());
+
+export const createLecturaItemSchema = z.object({
+  sensorInstaladoId: z.coerce.number().int().positive().optional(),
+  id_sensor_instalado: z.coerce.number().int().positive().optional(),
+  sensor_instalado_id: z.coerce.number().int().positive().optional(),
+  valor: decimalField,
+  tomada_en: lecturaTimestampFieldOptional,
+  timestamp: lecturaTimestampFieldOptional,
+  fecha: lecturaTimestampFieldOptional,
+  hora: lecturaTimestampFieldOptional,
+}).superRefine((value, ctx) => {
+  const sensorId = value.sensorInstaladoId ?? value.id_sensor_instalado ?? value.sensor_instalado_id;
+  if (!sensorId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'sensorInstaladoId o id_sensor_instalado es obligatorio',
+      path: ['sensorInstaladoId'],
+    });
+  }
+
+  if (!value.tomada_en && !value.timestamp && value.hora && !value.fecha) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'fecha es obligatoria cuando se envia hora',
+      path: ['fecha'],
+    });
+  }
+});
+
+export const createLecturasBodySchema = z.union([
+  createLecturaItemSchema,
+  z.array(createLecturaItemSchema).min(1).max(200),
+  z.object({
+    lecturas: z.array(createLecturaItemSchema).min(1).max(200),
+  }),
+]);
+
 export const wsFilterSchema = z.object({
   sensorInstaladoId: z.coerce.number().int().positive().optional(),
   instalacionId: z.coerce.number().int().positive().optional()
