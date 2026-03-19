@@ -41,7 +41,8 @@ function appendVaryHeader(currentVary: string | string[] | number | undefined, v
 
 // Security middleware
 await app.register(helmet, {
-  contentSecurityPolicy: false // Disable CSP for WebSocket support
+  contentSecurityPolicy: false, // Disable CSP for WebSocket support
+  crossOriginOpenerPolicy: false,
 });
 await app.register(cors, {
   origin: config.env === 'production' ? false : '*', // Configure in production
