@@ -16,6 +16,8 @@ services:
       - "${PORT:-3100}:${PORT:-3100}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
     healthcheck:
       test:
         [
@@ -31,3 +33,7 @@ services:
     deploy:
       restart_policy:
         condition: any
+
+networks:
+  default:
+    name: ${DOCKER_NETWORK:-aqua-backend-network}

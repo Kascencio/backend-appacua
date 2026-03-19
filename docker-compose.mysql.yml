@@ -34,5 +34,4 @@ volumes:
 
 networks:
   aqua-backend-network:
-    external: true
     name: ${DOCKER_NETWORK:-aqua-backend-network}

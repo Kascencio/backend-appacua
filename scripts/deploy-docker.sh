@@ -6,22 +6,13 @@ cd "$ROOT_DIR"
 
 COMPOSE_FILES=(-f docker-compose.yml)
 IMAGE_NAME="${DOCKER_IMAGE:-aqua-backend:latest}"
-NETWORK_NAME="${DOCKER_NETWORK:-aqua-backend-network}"
 
 if [[ "${1:-}" == "--with-mysql" ]]; then
   COMPOSE_FILES+=(-f docker-compose.mysql.yml)
 fi
 
-echo "[1/5] Ensuring network exists: ${NETWORK_NAME}"
-if docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
-  echo "Network already exists. Using ${NETWORK_NAME}."
-else
-  docker network create "${NETWORK_NAME}" >/dev/null
-  echo "Network created: ${NETWORK_NAME}."
-fi
-
 BUILD_ARGS=()
-echo "[2/5] Ensuring image exists: ${IMAGE_NAME}"
+echo "[1/4] Ensuring image exists: ${IMAGE_NAME}"
 if docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
   echo "Image already exists. Using ${IMAGE_NAME}."
 else
@@ -29,14 +20,14 @@ else
   BUILD_ARGS+=(--build)
 fi
 
-echo "[3/5] Starting containers..."
+echo "[2/4] Starting containers..."
 docker compose "${COMPOSE_FILES[@]}" up -d --remove-orphans "${BUILD_ARGS[@]}"
 
-echo "[4/5] Running health check..."
+echo "[3/4] Running health check..."
 sleep 3
 docker compose "${COMPOSE_FILES[@]}" ps
 
-echo "[5/5] Recent backend logs:"
+echo "[4/4] Recent backend logs:"
 docker compose "${COMPOSE_FILES[@]}" logs --tail=80 aqua-backend
 
 echo "Deployment completed."

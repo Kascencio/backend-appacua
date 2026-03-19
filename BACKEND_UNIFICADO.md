@@ -96,6 +96,16 @@ docker run -d --name aqua-backend \
   aqua-backend:latest
 ```
 
+Docker Compose local:
+```bash
+./scripts/deploy-docker.sh
+```
+
+Con MySQL local en contenedor:
+```bash
+./scripts/deploy-docker.sh --with-mysql
+```
+
 Publicar a Docker Hub:
 ```bash
 docker tag aqua-backend:latest <DOCKERHUB_USER>/aqua-backend:latest
@@ -107,6 +117,17 @@ Portainer (recomendado):
 2. En Portainer > Stacks, usar `portainer-stack.yml`.
 3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
 4. Deployar el stack y validar `GET /health`.
+
+Docker Swarm por CLI:
+```bash
+docker swarm init
+STACK_NAME=aqua-backend ./scripts/deploy-swarm.sh
+```
+
+Notas operativas:
+- `docker-compose.yml` es para `docker compose`, no para `docker stack deploy`.
+- `docker stack deploy` ignora opciones como `build`, `restart` y `container_name`; para Swarm o Portainer usa `portainer-stack.yml`.
+- La red `DOCKER_NETWORK` la crean Compose o Swarm automaticamente; ya no hace falta precrear una red `external`.
 
 ## 8) Endpoints principales
 ### 8.1 Salud
