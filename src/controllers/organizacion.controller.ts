@@ -92,7 +92,7 @@ function replyWithError(
 export async function createOrganizacion(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede crear organizaciones' });
     }
@@ -142,7 +142,7 @@ export async function getOrganizaciones(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope) && scope.role !== 'admin') {
       return reply.status(403).send({ error: 'No tiene permisos para consultar organizaciones' });
     }
@@ -203,7 +203,7 @@ export async function getOrganizaciones(
 export async function getOrganizacionById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope) && scope.role !== 'admin') {
       return reply.status(403).send({ error: 'No tiene permisos para consultar organizaciones' });
     }
@@ -235,7 +235,7 @@ export async function getOrganizacionById(req: FastifyRequest<{ Params: { id: st
 export async function updateOrganizacion(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede actualizar organizaciones' });
     }
@@ -290,7 +290,7 @@ export async function updateOrganizacion(req: FastifyRequest<{ Params: { id: str
 export async function deleteOrganizacion(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede eliminar organizaciones' });
     }
@@ -310,7 +310,7 @@ export async function deleteOrganizacion(req: FastifyRequest<{ Params: { id: str
 export async function createSucursal(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede crear sucursales' });
     }
@@ -363,7 +363,7 @@ export async function getSucursales(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope) && scope.role !== 'admin') {
       return reply.status(403).send({ error: 'No tiene permisos para consultar sucursales' });
     }
@@ -420,7 +420,7 @@ export async function getSucursales(
 export async function getSucursalById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope) && scope.role !== 'admin') {
       return reply.status(403).send({ error: 'No tiene permisos para consultar sucursales' });
     }
@@ -453,7 +453,7 @@ export async function getSucursalById(req: FastifyRequest<{ Params: { id: string
 export async function updateSucursal(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede actualizar sucursales' });
     }
@@ -508,7 +508,7 @@ export async function updateSucursal(req: FastifyRequest<{ Params: { id: string 
 export async function deleteSucursal(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede eliminar sucursales' });
     }

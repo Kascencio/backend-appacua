@@ -522,7 +522,7 @@ async function resolveInstalacionSucursalId(params: {
 export async function createInstalacion(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear instalaciones' });
     }
@@ -597,7 +597,7 @@ export async function getInstalaciones(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const filters: any[] = [];
 
@@ -671,7 +671,7 @@ export async function getInstalaciones(
 export async function getInstalacionById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id);
     const instalacion = await prisma.instalacion.findUnique({
@@ -708,7 +708,7 @@ export async function getInstalacionById(req: FastifyRequest<{ Params: { id: str
 export async function updateInstalacion(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar instalaciones' });
     }
@@ -798,7 +798,7 @@ export async function updateInstalacion(req: FastifyRequest<{ Params: { id: stri
 export async function deleteInstalacion(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar instalaciones' });
     }
@@ -829,7 +829,7 @@ export async function deleteInstalacion(req: FastifyRequest<{ Params: { id: stri
 export async function createCatalogoSensor(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear sensores de catálogo' });
     }
@@ -855,7 +855,7 @@ export async function createCatalogoSensor(req: FastifyRequest, reply: FastifyRe
 export async function getCatalogoSensores(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(_req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const sensores = await prisma.catalogo_sensores.findMany();
     reply.send(sensores.map(serializeCatalogoSensor));
@@ -867,7 +867,7 @@ export async function getCatalogoSensores(_req: FastifyRequest, reply: FastifyRe
 export async function getCatalogoSensorById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id);
     const sensor = await prisma.catalogo_sensores.findUnique({
@@ -887,7 +887,7 @@ export async function getCatalogoSensorById(req: FastifyRequest<{ Params: { id: 
 export async function updateCatalogoSensor(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar sensores de catálogo' });
     }
@@ -918,7 +918,7 @@ export async function updateCatalogoSensor(req: FastifyRequest<{ Params: { id: s
 export async function deleteCatalogoSensor(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar sensores de catálogo' });
     }
@@ -936,7 +936,7 @@ export async function deleteCatalogoSensor(req: FastifyRequest<{ Params: { id: s
 export async function createSensorInstalado(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para instalar sensores' });
     }
@@ -1007,7 +1007,7 @@ export async function getSensoresInstalados(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const filters: any[] = [];
 
@@ -1074,7 +1074,7 @@ export async function getSensoresInstalados(
 export async function getSensorInstaladoById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id);
     const sensor = await prisma.sensor_instalado.findUnique({
@@ -1103,7 +1103,7 @@ export async function getSensorInstaladoById(req: FastifyRequest<{ Params: { id:
 export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar sensores instalados' });
     }
@@ -1239,7 +1239,7 @@ export async function updateSensorInstalado(req: FastifyRequest<{ Params: { id: 
 export async function deleteSensorInstalado(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar sensores instalados' });
     }

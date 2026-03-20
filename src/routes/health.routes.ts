@@ -521,7 +521,226 @@ function buildHealthWarnings(params: {
   return warnings;
 }
 
-async function sendHealthResponse(_request: FastifyRequest, reply: FastifyReply) {
+function requestsHtml(request: FastifyRequest): boolean {
+  const accept = String(request.headers.accept || '');
+  if (!accept || accept === '*/*') return false;
+  return accept.includes('text/html');
+}
+
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function statusColor(status: string): string {
+  if (status === 'ok' || status === 'connected') return '#22c55e';
+  if (status === 'warning') return '#f59e0b';
+  return '#ef4444';
+}
+
+function statusEmoji(status: string): string {
+  if (status === 'ok' || status === 'connected') return '✅';
+  if (status === 'warning') return '⚠️';
+  return '❌';
+}
+
+function renderHealthHtml(payload: Record<string, any>): string {
+  const status = String(payload.status || 'unknown');
+  const svc = payload.service || {};
+  const srv = payload.server || {};
+  const db = payload.database || {};
+  const ops = payload.operations || {};
+  const feat = payload.features || {};
+  const integrations = payload.integrations || {};
+  const sys = payload.system || {};
+  const runtime = payload.runtime || {};
+  const observability = payload.observability || {};
+  const warnings: string[] = payload.warnings || [];
+  const apis = payload.apis || {};
+
+  const counts = ops.counts || {};
+  const mem = sys.memory_mb || {};
+  const hostInfo = runtime.host || {};
+  const telegram = integrations.telegram || {};
+  const ws = observability.websocket || {};
+  const poller = observability.poller || {};
+  const agg = observability.aggregates || {};
+
+  const formatUptime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h}h ${m}m ${s}s`;
+  };
+
+  const row = (label: string, value: unknown, color?: string) =>
+    `<tr><td style="padding:6px 12px;font-weight:500;color:#64748b">${esc(label)}</td><td style="padding:6px 12px${color ? `;color:${color};font-weight:600` : ''}">${esc(value)}</td></tr>`;
+
+  const section = (title: string, icon: string, rows: string) =>
+    `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+      <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:600;font-size:15px">${icon} ${esc(title)}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>
+    </div>`;
+
+  const warningsHtml = warnings.length > 0
+    ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:16px;margin-bottom:8px">
+        <div style="font-weight:600;margin-bottom:8px">⚠️ Advertencias (${warnings.length})</div>
+        <ul style="margin:0;padding-left:20px">${warnings.map((w) => `<li style="margin:4px 0">${esc(w)}</li>`).join('')}</ul>
+      </div>`
+    : '';
+
+  const featList = Object.entries(feat)
+    .map(([k, v]) => `<span style="display:inline-block;padding:4px 10px;margin:3px;border-radius:6px;font-size:13px;background:${v ? '#dcfce7;color:#166534' : '#fee2e2;color:#991b1b'}">${v ? '✓' : '✗'} ${esc(k.replace(/_/g, ' '))}</span>`)
+    .join('');
+
+  const modulesList = (apis.modules || []).map((m: any) =>
+    `<div style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px">
+      <strong>${esc(m.name)}</strong> <span style="color:#94a3b8">(${esc(m.kind)})</span> — ${esc(m.description)}
+      <div style="color:#94a3b8;margin-top:2px">${(m.routes || []).length} rutas</div>
+    </div>`
+  ).join('');
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AQUA Health — ${esc(status.toUpperCase())}</title>
+  <meta http-equiv="refresh" content="30">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:#f1f5f9;color:#1e293b;line-height:1.6}
+    .container{max-width:960px;margin:0 auto;padding:24px 16px}
+    .header{text-align:center;padding:32px 0 24px}
+    .header h1{font-size:28px;font-weight:700;letter-spacing:-0.5px}
+    .header p{color:#64748b;margin-top:4px;font-size:14px}
+    .status-pill{display:inline-block;padding:6px 18px;border-radius:20px;font-weight:700;font-size:16px;letter-spacing:0.5px;color:#fff;background:${statusColor(status)}}
+    .grid{display:grid;gap:16px;margin-top:16px}
+    .grid-2{grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+    .grid-1{grid-template-columns:1fr}
+    .kpi-row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:16px 0}
+    .kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;text-align:center;min-width:130px;flex:1;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+    .kpi .value{font-size:28px;font-weight:700}
+    .kpi .label{font-size:12px;color:#64748b;margin-top:2px}
+    .footer{text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;padding-bottom:16px}
+    @media(max-width:500px){.grid-2{grid-template-columns:1fr}.kpi-row{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🌊 AQUA Backend Health</h1>
+      <p>${esc(svc.name)} v${esc(svc.version)} — ${esc(svc.env)}</p>
+      <div style="margin-top:12px"><span class="status-pill">${statusEmoji(status)} ${esc(status.toUpperCase())}</span></div>
+    </div>
+
+    ${warningsHtml}
+
+    <div class="kpi-row">
+      <div class="kpi"><div class="value">${esc(formatUptime(svc.uptime_seconds ?? 0))}</div><div class="label">Uptime</div></div>
+      <div class="kpi"><div class="value" style="color:${statusColor(db.status)}">${esc(db.connected ? 'OK' : 'DOWN')}</div><div class="label">Base de datos</div></div>
+      <div class="kpi"><div class="value">${esc(counts.lecturas_hoy ?? 0)}</div><div class="label">Lecturas hoy</div></div>
+      <div class="kpi"><div class="value">${esc(counts.alertas_no_leidas ?? 0)}</div><div class="label">Alertas sin leer</div></div>
+      <div class="kpi"><div class="value">${esc(counts.procesos_en_progreso ?? 0)}</div><div class="label">Procesos activos</div></div>
+    </div>
+
+    <div class="grid grid-2">
+      ${section('Servicio', '🔧', [
+        row('Nombre', svc.name),
+        row('Versión', svc.version),
+        row('Entorno', svc.env),
+        row('Uptime', formatUptime(svc.uptime_seconds ?? 0)),
+        row('Iniciado', svc.started_at),
+      ].join(''))}
+
+      ${section('Base de Datos', '🗄️', [
+        row('Estado', db.status, statusColor(db.status)),
+        row('Proveedor', db.connection?.provider),
+        row('Host', db.connection?.host),
+        row('Base', db.database_name),
+        row('Versión MySQL', db.version),
+        row('Latencia', `${db.latency_ms ?? '?'} ms`),
+      ].join(''))}
+
+      ${section('Servidor', '💻', [
+        row('Host', `${srv.hostname} (${srv.host}:${srv.port})`),
+        row('PID', srv.pid),
+        row('Plataforma', `${srv.platform} ${srv.arch}`),
+        row('Node.js', srv.node_version),
+        row('Zona horaria', srv.timezone),
+      ].join(''))}
+
+      ${section('Memoria', '📊', [
+        row('RSS', `${mem.rss ?? 0} MB`),
+        row('Heap total', `${mem.heap_total ?? 0} MB`),
+        row('Heap usado', `${mem.heap_used ?? 0} MB`),
+        row('CPU cores', hostInfo.cpu_count),
+        row('RAM libre', `${hostInfo.free_memory_mb ?? 0} / ${hostInfo.total_memory_mb ?? 0} MB`),
+      ].join(''))}
+
+      ${section('Operaciones', '📈', [
+        row('Organizaciones', counts.organizaciones),
+        row('Sucursales', counts.sucursales),
+        row('Instalaciones', `${counts.instalaciones_activas ?? 0} activas / ${counts.instalaciones ?? 0} total`),
+        row('Procesos', `${counts.procesos_en_progreso ?? 0} activos / ${counts.procesos ?? 0} total`),
+        row('Especies', counts.especies),
+        row('Usuarios', `${counts.usuarios_activos ?? 0} activos / ${counts.usuarios ?? 0} total`),
+        row('Sensores', `${counts.sensores_asignados ?? 0} asignados / ${counts.sensores_instalados ?? 0} instalados`),
+        row('Lecturas hoy', counts.lecturas_hoy),
+        row('Lecturas total', counts.lecturas),
+        row('Promedios 15min', counts.promedios_15min),
+        row('Resumen horario', counts.resumen_horario),
+        row('Alertas', `${counts.alertas_no_leidas ?? 0} sin leer / ${counts.alertas ?? 0} total`),
+        row('Telegram suscripciones', counts.telegram_suscripciones_activas),
+      ].join(''))}
+
+      ${section('Observabilidad', '👁️', [
+        row('WebSocket clientes', ws.active_connections ?? 0),
+        row('WS mensajes enviados', ws.messages_sent ?? 0),
+        row('Poller activo', poller.running ? 'Sí' : 'No'),
+        row('Poller intervalo', `${poller.interval_ms ?? 0} ms`),
+        row('Poller último tick', poller.last_tick_at || 'N/A'),
+        row('Agregados último refresh', agg.last_refresh_at || 'N/A'),
+      ].join(''))}
+    </div>
+
+    <div class="grid grid-1" style="margin-top:16px">
+      ${section('Telegram', '📱', [
+        row('Habilitado', telegram.enabled ? 'Sí' : 'No', telegram.enabled ? '#22c55e' : '#ef4444'),
+        row('Bot configurado', telegram.bot_configured ? 'Sí' : 'No'),
+        row('Chat configurado', telegram.chat_configured ? 'Sí' : 'No'),
+        row('Suscripciones activas', telegram.subscriptions_active ?? 0),
+        row('Webhook URL', telegram.webhook_base_url || 'No configurado'),
+        row('Webhook secret', telegram.webhook_secret_configured ? 'Configurado' : 'No'),
+      ].join(''))}
+    </div>
+
+    <div class="grid grid-1" style="margin-top:16px">
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:600;font-size:15px">✨ Features</div>
+        <div style="padding:12px 16px">${featList}</div>
+      </div>
+    </div>
+
+    <div class="grid grid-1" style="margin-top:16px">
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:600;font-size:15px">🔌 API Modules (${esc(apis.total_modules)} módulos · ${esc(apis.total_routes)} rutas)</div>
+        ${modulesList}
+      </div>
+    </div>
+
+    <div class="footer">
+      Generado en ${esc(sys.generated_in_ms)} ms · ${esc(payload.timestamp)} · Auto-refresh cada 30s
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function sendHealthResponse(request: FastifyRequest, reply: FastifyReply) {
   const responseStartedAt = process.hrtime.bigint();
   const timestamp = new Date();
   const memoryUsage = process.memoryUsage();
@@ -634,9 +853,16 @@ async function sendHealthResponse(_request: FastifyRequest, reply: FastifyReply)
     warnings,
   };
 
-  reply
-    .code(database.connected ? 200 : 503)
-    .send(payload);
+  const httpStatus = database.connected ? 200 : 503;
+
+  if (requestsHtml(request)) {
+    return reply
+      .code(httpStatus)
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(renderHealthHtml(payload));
+  }
+
+  reply.code(httpStatus).send(payload);
 }
 
 export async function registerHealth(app: FastifyInstance) {

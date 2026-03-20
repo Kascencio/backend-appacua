@@ -858,7 +858,7 @@ async function buildProcesoLecturasPayload(
 export async function getLecturas(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const q = normalizeRangeQuery(req.query as any);
     const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
@@ -1025,7 +1025,7 @@ export async function createLecturas(req: FastifyRequest, reply: FastifyReply) {
 export async function getLecturasProceso(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const query = req.query as any;
     const procesoId = toPositiveInt(query.proceso ?? query.id_proceso);
@@ -1054,7 +1054,7 @@ export async function getLecturasProceso(req: FastifyRequest, reply: FastifyRepl
 export async function getLecturasPorProceso(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const query = req.query as any;
     const procesoId = toPositiveInt(query.id_proceso ?? query.proceso);
@@ -1089,7 +1089,7 @@ export async function getLecturasPorProceso(req: FastifyRequest, reply: FastifyR
 export async function getResumenHorario(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const q = normalizeRangeQuery(req.query as any);
     const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
@@ -1149,7 +1149,7 @@ export async function getResumenHorario(req: FastifyRequest, reply: FastifyReply
 export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const q = normalizePromediosRequest(req.query as any);
     const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);
@@ -1286,7 +1286,7 @@ export async function getPromedios(req: FastifyRequest, reply: FastifyReply) {
 export async function getPromediosBatch(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const q = normalizePromediosBatchRequest(req.query as any);
     const uniqueSensorIds = [...new Set(q.sensorInstaladoIds)];
@@ -1371,7 +1371,7 @@ export async function getPromediosBatch(req: FastifyRequest, reply: FastifyReply
 export async function getReporteXML(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const q = normalizeRangeQuery(req.query as any);
     const sensorAllowed = await canAccessSensorInstaladoCached(scope, q.sensorInstaladoId);

@@ -256,7 +256,9 @@ export async function requireRequestScope(
       : 401;
 
     const message = error instanceof Error ? error.message : 'No autorizado';
-    reply.status(statusCode).send({ error: message });
+    if (!reply.sent) {
+      reply.status(statusCode).send({ error: message });
+    }
     return null;
   }
 }

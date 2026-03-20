@@ -208,7 +208,7 @@ function serializeProceso(proceso: any) {
 export async function createCatalogoEspecie(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear especies' });
     }
@@ -257,7 +257,7 @@ export async function createCatalogoEspecie(req: FastifyRequest, reply: FastifyR
 export async function getCatalogoEspecies(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(_req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const especies = await prisma.especies.findMany({
       orderBy: {
@@ -274,7 +274,7 @@ export async function getCatalogoEspecies(_req: FastifyRequest, reply: FastifyRe
 export async function getCatalogoEspecieById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id, 10);
     const especie = await prisma.especies.findUnique({
@@ -294,7 +294,7 @@ export async function getCatalogoEspecieById(req: FastifyRequest<{ Params: { id:
 export async function updateCatalogoEspecie(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar especies' });
     }
@@ -349,7 +349,7 @@ export async function updateCatalogoEspecie(req: FastifyRequest<{ Params: { id: 
 export async function deleteCatalogoEspecie(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar especies' });
     }
@@ -366,7 +366,7 @@ export async function deleteCatalogoEspecie(req: FastifyRequest<{ Params: { id: 
 export async function createEspecieParametro(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear parámetros por especie' });
     }
@@ -394,7 +394,7 @@ export async function createEspecieParametro(req: FastifyRequest, reply: Fastify
 export async function getEspeciesParametros(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(_req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const parametros = await prisma.especie_parametro.findMany({
       include: { parametros: true, especies: true },
@@ -411,7 +411,7 @@ export async function getEspeciesParametros(_req: FastifyRequest, reply: Fastify
 export async function getEspecieParametroById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id, 10);
     const parametro = await prisma.especie_parametro.findUnique({
@@ -432,7 +432,7 @@ export async function getEspecieParametroById(req: FastifyRequest<{ Params: { id
 export async function updateEspecieParametro(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar parámetros por especie' });
     }
@@ -463,7 +463,7 @@ export async function updateEspecieParametro(req: FastifyRequest<{ Params: { id:
 export async function deleteEspecieParametro(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar parámetros por especie' });
     }
@@ -480,7 +480,7 @@ export async function deleteEspecieParametro(req: FastifyRequest<{ Params: { id:
 export async function createProceso(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear procesos' });
     }
@@ -567,7 +567,7 @@ export async function getProcesos(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const idInstalacion = toPositiveInt(req.query.id_instalacion);
     const idEspecie = toPositiveInt(req.query.id_especie);
@@ -625,7 +625,7 @@ export async function getProcesos(
 export async function getProcesoById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id, 10);
     const proceso = await prisma.procesos.findUnique({
@@ -672,7 +672,7 @@ export async function getProcesoById(req: FastifyRequest<{ Params: { id: string 
 export async function updateProceso(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar procesos' });
     }
@@ -797,7 +797,7 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
 export async function deleteProceso(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar procesos' });
     }

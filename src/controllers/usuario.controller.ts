@@ -501,7 +501,7 @@ async function getUsuarioWithRelations(
 export async function createUsuario(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear usuarios' });
     }
@@ -866,7 +866,7 @@ export async function resetPassword(req: FastifyRequest, reply: FastifyReply) {
 export async function getMe(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const usuario = await getUsuarioWithRelations(prisma, scope.idUsuario);
     if (!usuario) {
@@ -892,7 +892,7 @@ export async function getUsuarios(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para consultar usuarios' });
     }
@@ -949,7 +949,7 @@ export async function getUsuarios(
 export async function getUsuarioById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = Number.parseInt(req.params.id, 10);
     if (!canManageUsers(scope) && id !== scope.idUsuario) {
@@ -975,7 +975,7 @@ export async function getUsuarioById(req: FastifyRequest<{ Params: { id: string 
 export async function updateUsuario(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar usuarios' });
     }
@@ -1077,7 +1077,7 @@ export async function updateUsuario(req: FastifyRequest<{ Params: { id: string }
 export async function deleteUsuario(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar usuarios' });
     }
@@ -1128,7 +1128,7 @@ export async function deleteUsuario(req: FastifyRequest<{ Params: { id: string }
 export async function createTipoRol(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede crear roles' });
     }
@@ -1158,7 +1158,7 @@ export async function createTipoRol(req: FastifyRequest, reply: FastifyReply) {
 export async function getTiposRol(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(_req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para consultar roles' });
     }
@@ -1188,7 +1188,7 @@ export async function getTiposRol(_req: FastifyRequest, reply: FastifyReply) {
 export async function getTipoRolById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para consultar roles' });
     }
@@ -1221,7 +1221,7 @@ export async function getTipoRolById(req: FastifyRequest<{ Params: { id: string 
 export async function updateTipoRol(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede actualizar roles' });
     }
@@ -1258,7 +1258,7 @@ export async function updateTipoRol(req: FastifyRequest<{ Params: { id: string }
 export async function deleteTipoRol(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!isSuperadmin(scope)) {
       return reply.status(403).send({ error: 'Solo superadmin puede eliminar roles' });
     }
@@ -1401,7 +1401,7 @@ function buildAlertasScopeFilter(scope: RequestScope): Prisma.alertasWhereInput 
 export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear alertas' });
     }
@@ -1489,7 +1489,7 @@ export async function getAlertas(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const { id_instalacion, id_sensor_instalado, read } = req.query;
     const filters: Prisma.alertasWhereInput[] = [];
@@ -1530,7 +1530,7 @@ export async function getAlertas(
 export async function markAlertaRead(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) {
@@ -1581,7 +1581,7 @@ type MarkAllAlertasBody = {
 export async function markAllAlertasRead(req: FastifyRequest<{ Body: MarkAllAlertasBody }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const body = (req.body || {}) as MarkAllAlertasBody;
     const read = parseBoolean(body.read ?? body.leida, true);
@@ -1647,7 +1647,7 @@ type DeleteAllAlertasBody = {
 export async function deleteAllAlertas(req: FastifyRequest<{ Body: DeleteAllAlertasBody }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar alertas' });
     }
@@ -1701,7 +1701,7 @@ export async function deleteAllAlertas(req: FastifyRequest<{ Body: DeleteAllAler
 export async function getAlertaById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = Number.parseInt(req.params.id, 10);
     const alerta = await fetchAlertaWithRelations(id);
@@ -1723,7 +1723,7 @@ export async function getAlertaById(req: FastifyRequest<{ Params: { id: string }
 export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar alertas' });
     }
@@ -1799,7 +1799,7 @@ export async function updateAlerta(req: FastifyRequest<{ Params: { id: string } 
 export async function deleteAlerta(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar alertas' });
     }
@@ -1829,7 +1829,7 @@ export async function deleteAlerta(req: FastifyRequest<{ Params: { id: string } 
 export async function createParametro(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear parámetros' });
     }
@@ -1845,7 +1845,7 @@ export async function createParametro(req: FastifyRequest, reply: FastifyReply) 
 export async function getParametros(_req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(_req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const parametros = await prisma.parametros.findMany({
       orderBy: {
@@ -1866,7 +1866,7 @@ export async function getParametros(_req: FastifyRequest, reply: FastifyReply) {
 export async function getParametroById(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = parseInt(req.params.id);
     const parametro = await prisma.parametros.findUnique({
@@ -1890,7 +1890,7 @@ export async function getParametroById(req: FastifyRequest<{ Params: { id: strin
 export async function updateParametro(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para actualizar parámetros' });
     }
@@ -1916,7 +1916,7 @@ export async function updateParametro(req: FastifyRequest<{ Params: { id: string
 export async function deleteParametro(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageResources(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar parámetros' });
     }
@@ -1933,7 +1933,7 @@ export async function deleteParametro(req: FastifyRequest<{ Params: { id: string
 export async function createAsignacionUsuario(req: FastifyRequest, reply: FastifyReply) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para crear asignaciones' });
     }
@@ -2046,7 +2046,7 @@ export async function getAsignacionesUsuario(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const userId = toInt(req.query.userId);
     const sucursalIdRaw = toInt(req.query.sucursalId);
@@ -2131,7 +2131,7 @@ export async function getAsignacionUsuarioById(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
 
     const id = Number.parseInt(req.params.id, 10);
     const asignacion = await prisma.asignacion_usuario.findUnique({
@@ -2186,7 +2186,7 @@ export async function deleteAsignacionUsuario(
 ) {
   try {
     const scope = await requireRequestScope(req, reply);
-    if (!scope) return;
+    if (!scope) return reply;
     if (!canManageUsers(scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para eliminar asignaciones' });
     }
