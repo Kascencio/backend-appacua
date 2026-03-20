@@ -324,6 +324,7 @@ async function main() {
 
   const rolSuperadmin = await ensureRole('SUPERADMIN');
   const rolAdmin = await ensureRole('ADMIN');
+  const rolOperador = await ensureRole('OPERADOR');
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -338,6 +339,13 @@ async function main() {
     nombre: 'Admin Operativo',
     correo: 'admin@example.com',
     idRol: rolAdmin.id_rol,
+    passwordHash,
+  });
+
+  const operador = await ensureUser({
+    nombre: 'Operador de Campo',
+    correo: 'operador@example.com',
+    idRol: rolOperador.id_rol,
     passwordHash,
   });
 
@@ -740,6 +748,21 @@ async function main() {
       idSucursal: null,
       idInstalacion: firstAdminFacility,
     });
+
+    await ensureAssignment({
+      idUsuario: operador.id_usuario,
+      idSucursal: null,
+      idInstalacion: firstAdminFacility,
+    });
+  }
+
+  const firstBranchId = allBranchIds[0];
+  if (firstBranchId) {
+    await ensureAssignment({
+      idUsuario: operador.id_usuario,
+      idSucursal: firstBranchId,
+      idInstalacion: null,
+    });
   }
 
   const historyStart = addDays(today, -HISTORY_DAYS);
@@ -866,6 +889,7 @@ async function main() {
   console.log('Seeding completed successfully.');
   console.log(`Superadmin: superadmin@example.com / ${DEFAULT_PASSWORD}`);
   console.log(`Admin: admin@example.com / ${DEFAULT_PASSWORD}`);
+  console.log(`Operador: operador@example.com / ${DEFAULT_PASSWORD}`);
   console.log(`Instalaciones: ${totalInstalaciones}`);
   console.log(`Sensores instalados: ${totalSensores}`);
   console.log(`Lecturas (${HISTORY_DAYS} días): ${totalLecturas}`);

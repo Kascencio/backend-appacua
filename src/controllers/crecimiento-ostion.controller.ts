@@ -50,7 +50,7 @@ export async function getProcesoCrecimientoOstion(
 ) {
   try {
     const authorized = await getAuthorizedProceso(req, reply);
-    if (!authorized) return;
+    if (!authorized) return reply;
 
     reply.send(serializeCrecimientoOstionConfig(authorized.proceso.crecimiento_ostion_config, { includeMeasurements: true }));
   } catch (error: any) {
@@ -64,7 +64,7 @@ export async function updateProcesoCrecimientoOstion(
 ) {
   try {
     const authorized = await getAuthorizedProceso(req, reply);
-    if (!authorized) return;
+    if (!authorized) return reply;
     if (!canManageResources(authorized.scope)) {
       return reply.status(403).send({ error: 'No tiene permisos para configurar crecimiento del ostión' });
     }
@@ -91,7 +91,7 @@ export async function createProcesoCrecimientoOstionCaptura(
 ) {
   try {
     const authorized = await getAuthorizedProceso(req, reply);
-    if (!authorized) return;
+    if (!authorized) return reply;
 
     const body = createExtraCrecimientoOstionCapturaSchema.parse(req.body || {});
     const crecimiento = await prisma.$transaction((tx) =>
@@ -113,7 +113,7 @@ export async function updateProcesoCrecimientoOstionCapturaById(
       req as unknown as FastifyRequest<{ Params: { id: string } }>,
       reply,
     );
-    if (!authorized) return;
+    if (!authorized) return reply;
 
     const idCaptura = Number.parseInt(req.params.capturaId, 10);
     if (!Number.isFinite(idCaptura) || idCaptura <= 0) {
@@ -140,7 +140,7 @@ export async function saveProcesoCrecimientoOstionMediciones(
       req as unknown as FastifyRequest<{ Params: { id: string } }>,
       reply,
     );
-    if (!authorized) return;
+    if (!authorized) return reply;
 
     const idCaptura = Number.parseInt(req.params.capturaId, 10);
     if (!Number.isFinite(idCaptura) || idCaptura <= 0) {
