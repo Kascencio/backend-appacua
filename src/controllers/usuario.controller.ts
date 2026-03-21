@@ -1526,9 +1526,14 @@ export async function getAlertas(
       },
     });
 
-    reply.send(alertas.map(serializeAlerta));
+    return reply.send(alertas.map(serializeAlerta));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) {
+      req.log.warn({ err: error }, 'Se omitio una segunda respuesta porque la solicitud ya fue respondida');
+      return reply;
+    }
+
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
   }
 }
 

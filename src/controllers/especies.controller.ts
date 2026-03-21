@@ -265,9 +265,14 @@ export async function getCatalogoEspecies(_req: FastifyRequest, reply: FastifyRe
       },
     });
 
-    reply.send(especies.map(serializeEspecie));
+    return reply.send(especies.map(serializeEspecie));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) {
+      _req.log.warn({ err: error }, 'Se omitio una segunda respuesta porque la solicitud ya fue respondida');
+      return reply;
+    }
+
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
   }
 }
 
@@ -616,9 +621,14 @@ export async function getProcesos(
       ? serialized.filter((proceso) => proceso.estado === estado)
       : serialized;
 
-    reply.send(filtered);
+    return reply.send(filtered);
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) {
+      req.log.warn({ err: error }, 'Se omitio una segunda respuesta porque la solicitud ya fue respondida');
+      return reply;
+    }
+
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
   }
 }
 
