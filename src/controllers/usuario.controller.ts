@@ -940,9 +940,14 @@ export async function getUsuarios(
       },
     });
 
-    reply.send(usuarios.map(serializeUsuario));
+    return reply.send(usuarios.map(serializeUsuario));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) {
+      req.log.warn({ err: error }, 'Se omitio una segunda respuesta porque la solicitud ya fue respondida');
+      return reply;
+    }
+
+    return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
   }
 }
 
