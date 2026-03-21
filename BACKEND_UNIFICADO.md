@@ -119,10 +119,11 @@ Portainer con imagen publicada:
 4. Deployar el stack y validar `GET /health`.
 
 Portainer construyendo desde el repo:
-1. En Portainer > Stacks o Git repository, usar `portainer-compose.yml`.
-2. Asegurarse de que el contexto del stack sea la carpeta `backend/` del repo.
-3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
-4. Deployar el stack y validar `GET /health`.
+1. Solo aplica si el endpoint de Portainer es Docker standalone o Compose, no Swarm.
+2. En Portainer > Stacks o Git repository, usar `portainer-compose.yml`.
+3. Asegurarse de que el contexto del stack sea la carpeta `backend/` del repo.
+4. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
+5. Deployar el stack y validar `GET /health`.
 
 Docker Swarm por CLI:
 ```bash
@@ -135,6 +136,7 @@ Notas operativas:
 - `docker-compose.yml` es para `docker compose`, no para `docker stack deploy`.
 - `portainer-compose.yml` es para Portainer en modo Compose/standalone cuando quieres construir con `Dockerfile` y no depender de un registry.
 - `docker stack deploy` ignora opciones como `build`, `restart` y `container_name`; para Swarm o Portainer usa `portainer-stack.yml`.
+- Si Portainer muestra `Ignoring unsupported options: build, restart`, estas en Swarm y no puedes construir desde el stack; necesitas una imagen publicada en `DOCKER_IMAGE`.
 - La red `DOCKER_NETWORK` la crean Compose o Swarm automaticamente; ya no hace falta precrear una red `external`.
 - En Swarm la imagen debe existir en un registry accesible para el nodo o nodos; `aqua-backend:latest` local no sirve para `stack deploy`.
 

@@ -1,3 +1,5 @@
+# Solo usar este archivo en Portainer contra un endpoint Docker standalone/compose.
+# No funciona en Portainer Swarm porque `docker stack deploy` ignora `build`.
 services:
   aqua-backend:
     container_name: aqua-backend
