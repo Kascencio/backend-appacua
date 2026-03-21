@@ -112,9 +112,15 @@ docker tag aqua-backend:latest <DOCKERHUB_USER>/aqua-backend:latest
 docker push <DOCKERHUB_USER>/aqua-backend:latest
 ```
 
-Portainer (recomendado):
+Portainer con imagen publicada:
 1. Subir imagen a Docker Hub/GHCR (`<DOCKERHUB_USER>/aqua-backend:latest`).
 2. En Portainer > Stacks, usar `portainer-stack.yml`.
+3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
+4. Deployar el stack y validar `GET /health`.
+
+Portainer construyendo desde el repo:
+1. En Portainer > Stacks o Git repository, usar `portainer-compose.yml`.
+2. Asegurarse de que el contexto del stack sea la carpeta `backend/` del repo.
 3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
 4. Deployar el stack y validar `GET /health`.
 
@@ -127,6 +133,7 @@ STACK_NAME=aqua-backend ./scripts/deploy-swarm.sh
 
 Notas operativas:
 - `docker-compose.yml` es para `docker compose`, no para `docker stack deploy`.
+- `portainer-compose.yml` es para Portainer en modo Compose/standalone cuando quieres construir con `Dockerfile` y no depender de un registry.
 - `docker stack deploy` ignora opciones como `build`, `restart` y `container_name`; para Swarm o Portainer usa `portainer-stack.yml`.
 - La red `DOCKER_NETWORK` la crean Compose o Swarm automaticamente; ya no hace falta precrear una red `external`.
 - En Swarm la imagen debe existir en un registry accesible para el nodo o nodos; `aqua-backend:latest` local no sirve para `stack deploy`.
