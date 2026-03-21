@@ -862,7 +862,7 @@ async function sendHealthResponse(request: FastifyRequest, reply: FastifyReply) 
       .send(renderHealthHtml(payload));
   }
 
-  reply.code(httpStatus).send(payload);
+  return reply.code(httpStatus).send(payload);
 }
 
 export async function registerHealth(app: FastifyInstance) {
