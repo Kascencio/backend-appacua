@@ -113,7 +113,7 @@ docker push <DOCKERHUB_USER>/aqua-backend:latest
 ```
 
 Portainer con imagen publicada:
-1. Subir imagen a Docker Hub/GHCR (`<DOCKERHUB_USER>/aqua-backend:latest`).
+1. Subir imagen a Docker Hub/GHCR (`keaf13/aqua-backend:latest` o `ghcr.io/<owner>/aqua-backend:latest`).
 2. En Portainer > Stacks, usar `portainer-stack.yml`.
 3. Cargar variables desde `portainer.env.example` en el formulario de Environment variables.
 4. Deployar el stack y validar `GET /health`.
@@ -128,7 +128,7 @@ Portainer construyendo desde el repo:
 Docker Swarm por CLI:
 ```bash
 docker swarm init
-export DOCKER_IMAGE=usuario/aqua-backend:latest
+export DOCKER_IMAGE=keaf13/aqua-backend:latest
 STACK_NAME=aqua-backend ./scripts/deploy-swarm.sh
 ```
 

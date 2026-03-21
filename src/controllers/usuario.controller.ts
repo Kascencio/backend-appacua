@@ -1863,13 +1863,13 @@ export async function getParametros(_req: FastifyRequest, reply: FastifyReply) {
       },
     });
 
-    reply.send(parametros.map((parametro) => ({
+    return reply.send(parametros.map((parametro) => ({
       ...parametro,
       nombre: parametro.nombre_parametro,
       unidad: parametro.unidad_medida,
     })));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    return reply.status(500).send({ error: error.message });
   }
 }
 
