@@ -52,9 +52,14 @@ export async function getProcesoCrecimientoOstion(
     const authorized = await getAuthorizedProceso(req, reply);
     if (!authorized) return reply;
 
-    reply.send(serializeCrecimientoOstionConfig(authorized.proceso.crecimiento_ostion_config, { includeMeasurements: true }));
+    return reply.send(
+      serializeCrecimientoOstionConfig(authorized.proceso.crecimiento_ostion_config, {
+        includeMeasurements: true,
+      }),
+    );
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(500).send({ error: error.message });
   }
 }
 
@@ -79,9 +84,10 @@ export async function updateProcesoCrecimientoOstion(
       }),
     );
 
-    reply.send(crecimiento);
+    return reply.send(crecimiento);
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -98,9 +104,10 @@ export async function createProcesoCrecimientoOstionCaptura(
       createExtraProcesoCrecimientoOstionCaptura(tx, authorized.idProceso, body),
     );
 
-    reply.status(201).send(crecimiento);
+    return reply.status(201).send(crecimiento);
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -125,9 +132,10 @@ export async function updateProcesoCrecimientoOstionCapturaById(
       updateProcesoCrecimientoOstionCaptura(tx, authorized.idProceso, idCaptura, body),
     );
 
-    reply.send(crecimiento);
+    return reply.send(crecimiento);
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -152,8 +160,9 @@ export async function saveProcesoCrecimientoOstionMediciones(
       upsertProcesoCrecimientoOstionMediciones(tx, authorized.idProceso, idCaptura, body),
     );
 
-    reply.send(crecimiento);
+    return reply.send(crecimiento);
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
