@@ -17,7 +17,7 @@ type ApiModuleCatalog = {
 
 const SERVER_STARTED_AT = new Date();
 const PACKAGE_INFO = loadPackageInfo();
-const HTTP_COMPRESSION_ENABLED = String(process.env.HTTP_COMPRESSION_ENABLED ?? 'true').toLowerCase() !== 'false';
+const HTTP_COMPRESSION_ENABLED = String(process.env.HTTP_COMPRESSION_ENABLED ?? 'false').toLowerCase() === 'true';
 
 const API_MODULES: ApiModuleCatalog[] = [
   {

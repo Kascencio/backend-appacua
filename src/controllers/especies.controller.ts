@@ -248,9 +248,10 @@ export async function createCatalogoEspecie(req: FastifyRequest, reply: FastifyR
       return created;
     });
 
-    reply.status(201).send(serializeEspecie(especie));
+    return reply.status(201).send(serializeEspecie(especie));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -290,9 +291,10 @@ export async function getCatalogoEspecieById(req: FastifyRequest<{ Params: { id:
       return reply.status(404).send({ error: 'Especie no encontrada' });
     }
 
-    reply.send(serializeEspecie(especie));
+    return reply.send(serializeEspecie(especie));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(500).send({ error: error.message });
   }
 }
 
@@ -345,9 +347,10 @@ export async function updateCatalogoEspecie(req: FastifyRequest<{ Params: { id: 
       return updated;
     });
 
-    reply.send(serializeEspecie(especie));
+    return reply.send(serializeEspecie(especie));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -361,9 +364,10 @@ export async function deleteCatalogoEspecie(req: FastifyRequest<{ Params: { id: 
 
     const id = parseInt(req.params.id, 10);
     await prisma.especies.delete({ where: { id_especie: id } });
-    reply.status(204).send();
+    return reply.status(204).send();
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -390,9 +394,10 @@ export async function createEspecieParametro(req: FastifyRequest, reply: Fastify
       },
     });
 
-    reply.status(201).send(serializeEspecieParametro(especieParametro));
+    return reply.status(201).send(serializeEspecieParametro(especieParametro));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -407,9 +412,10 @@ export async function getEspeciesParametros(_req: FastifyRequest, reply: Fastify
         id_especie_parametro: 'asc',
       },
     });
-    reply.send(parametros.map(serializeEspecieParametro));
+    return reply.send(parametros.map(serializeEspecieParametro));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(500).send({ error: error.message });
   }
 }
 
@@ -428,9 +434,10 @@ export async function getEspecieParametroById(req: FastifyRequest<{ Params: { id
       return reply.status(404).send({ error: 'Especie parámetro no encontrado' });
     }
 
-    reply.send(serializeEspecieParametro(parametro));
+    return reply.send(serializeEspecieParametro(parametro));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(500).send({ error: error.message });
   }
 }
 
@@ -459,9 +466,10 @@ export async function updateEspecieParametro(req: FastifyRequest<{ Params: { id:
       },
     });
 
-    reply.send(serializeEspecieParametro(parametro));
+    return reply.send(serializeEspecieParametro(parametro));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -475,9 +483,10 @@ export async function deleteEspecieParametro(req: FastifyRequest<{ Params: { id:
 
     const id = parseInt(req.params.id, 10);
     await prisma.especie_parametro.delete({ where: { id_especie_parametro: id } });
-    reply.status(204).send();
+    return reply.status(204).send();
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -560,9 +569,10 @@ export async function createProceso(req: FastifyRequest, reply: FastifyReply) {
       });
     });
 
-    reply.status(201).send(serializeProceso(proceso));
+    return reply.status(201).send(serializeProceso(proceso));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -673,9 +683,10 @@ export async function getProcesoById(req: FastifyRequest<{ Params: { id: string 
       }
     }
 
-    reply.send(serializeProceso(proceso));
+    return reply.send(serializeProceso(proceso));
   } catch (error: any) {
-    reply.status(500).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(500).send({ error: error.message });
   }
 }
 
@@ -798,9 +809,10 @@ export async function updateProceso(req: FastifyRequest<{ Params: { id: string }
       });
     });
 
-    reply.send(serializeProceso(proceso));
+    return reply.send(serializeProceso(proceso));
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }
 
@@ -832,8 +844,9 @@ export async function deleteProceso(req: FastifyRequest<{ Params: { id: string }
     }
 
     await prisma.procesos.delete({ where: { id_proceso: id } });
-    reply.status(204).send();
+    return reply.status(204).send();
   } catch (error: any) {
-    reply.status(400).send({ error: error.message });
+    if (reply.sent) return reply;
+    return reply.status(400).send({ error: error.message });
   }
 }

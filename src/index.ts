@@ -24,7 +24,7 @@ const app = Fastify({
   }
 });
 
-const HTTP_COMPRESSION_ENABLED = String(process.env.HTTP_COMPRESSION_ENABLED ?? 'true').toLowerCase() !== 'false';
+const HTTP_COMPRESSION_ENABLED = String(process.env.HTTP_COMPRESSION_ENABLED ?? 'false').toLowerCase() === 'true';
 const HTTP_COMPRESSION_MIN_BYTES = Number(process.env.HTTP_COMPRESSION_MIN_BYTES ?? 1024);
 const HTTP_COMPRESSION_BROTLI_QUALITY = Number(process.env.HTTP_COMPRESSION_BROTLI_QUALITY ?? 4);
 const HTTP_COMPRESSION_GZIP_LEVEL = Number(process.env.HTTP_COMPRESSION_GZIP_LEVEL ?? 6);
