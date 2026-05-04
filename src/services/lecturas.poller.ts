@@ -204,7 +204,7 @@ export function startLecturasPoller(intervalMs = 750) {
         const to = timestamps[timestamps.length - 1];
 
         if (from && to && sensorIds.length > 0) {
-          await enqueueLecturaAggregatesRefresh({
+          void enqueueLecturaAggregatesRefresh({
             from,
             to,
             sensorIds,

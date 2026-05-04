@@ -183,10 +183,19 @@ export async function getRequestScope(req: FastifyRequest): Promise<RequestScope
 
   const usuario = await prisma.usuario.findUnique({
     where: { id_usuario: idUsuario },
-    include: {
-      tipo_rol: true,
+    select: {
+      id_usuario: true,
+      id_rol: true,
+      estado: true,
+      tipo_rol: {
+        select: {
+          nombre: true,
+        },
+      },
       asignacion_usuario: {
-        include: {
+        select: {
+          id_organizacion_sucursal: true,
+          id_instalacion: true,
           organizacion_sucursal: {
             select: {
               id_organizacion: true,

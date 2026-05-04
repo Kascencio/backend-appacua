@@ -949,7 +949,13 @@ export async function createLecturas(req: FastifyRequest, reply: FastifyReply) {
       });
     }
 
-    const createdLecturas: CreateLecturaRecord[] = [];
+    const preparedLecturas: Array<{
+      sensorId: number;
+      sensor: (typeof sensors)[number];
+      item: CreateLecturaItemInput;
+      fecha: Date;
+      hora: Date;
+    }> = [];
 
     for (const item of payload.lecturas) {
       const sensorId = item.sensorInstaladoId ?? item.id_sensor_instalado ?? item.sensor_instalado_id;
@@ -968,13 +974,20 @@ export async function createLecturas(req: FastifyRequest, reply: FastifyReply) {
       }
 
       const { fecha, hora } = buildLecturaDateParts(timestamp);
-      const created = await prisma.$transaction(async (tx) => {
+      preparedLecturas.push({ sensorId, sensor, item, fecha, hora });
+    }
+
+    const createdLecturas = await prisma.$transaction(async (tx) => {
+      const records: CreateLecturaRecord[] = [];
+      const latestLecturaBySensor = new Map<number, number>();
+
+      for (const prepared of preparedLecturas) {
         const lectura = await tx.lectura.create({
           data: {
-            id_sensor_instalado: sensorId,
-            valor: item.valor,
-            fecha,
-            hora,
+            id_sensor_instalado: prepared.sensorId,
+            valor: prepared.item.valor,
+            fecha: prepared.fecha,
+            hora: prepared.hora,
           },
           select: {
             id_lectura: true,
@@ -985,27 +998,31 @@ export async function createLecturas(req: FastifyRequest, reply: FastifyReply) {
           },
         });
 
+        latestLecturaBySensor.set(prepared.sensorId, lectura.id_lectura);
+
+        records.push({
+          id_lectura: lectura.id_lectura,
+          id_sensor_instalado: lectura.id_sensor_instalado,
+          sensor_instalado_id: lectura.id_sensor_instalado,
+          valor: Number(lectura.valor),
+          tomada_en: combineFechaHoraISO(lectura.fecha as Date, lectura.hora as Date),
+          fecha: lectura.fecha,
+          hora: lectura.hora,
+          id_instalacion: prepared.sensor.id_instalacion ?? null,
+          tipo_medida: prepared.sensor.catalogo_sensores.nombre,
+          unidad_medida: prepared.sensor.catalogo_sensores.unidad_medida ?? null,
+        });
+      }
+
+      for (const [sensorId, lecturaId] of latestLecturaBySensor) {
         await tx.sensor_instalado.update({
           where: { id_sensor_instalado: sensorId },
-          data: { id_lectura: lectura.id_lectura },
+          data: { id_lectura: lecturaId },
         });
+      }
 
-        return lectura;
-      });
-
-      createdLecturas.push({
-        id_lectura: created.id_lectura,
-        id_sensor_instalado: created.id_sensor_instalado,
-        sensor_instalado_id: created.id_sensor_instalado,
-        valor: Number(created.valor),
-        tomada_en: combineFechaHoraISO(created.fecha as Date, created.hora as Date),
-        fecha: created.fecha,
-        hora: created.hora,
-        id_instalacion: sensor.id_instalacion ?? null,
-        tipo_medida: sensor.catalogo_sensores.nombre,
-        unidad_medida: sensor.catalogo_sensores.unidad_medida ?? null,
-      });
-    }
+      return records;
+    });
 
     invalidateLecturaReadCaches();
 

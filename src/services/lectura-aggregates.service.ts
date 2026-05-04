@@ -19,6 +19,8 @@ const RECONCILE_INTERVAL_MS = Number(process.env.LECTURA_AGGREGATES_RECONCILE_IN
 const RECONCILE_LOOKBACK_HOURS = Number(process.env.LECTURA_AGGREGATES_RECONCILE_LOOKBACK_HOURS ?? 48);
 
 let refreshQueue = Promise.resolve();
+let pendingRefreshInput: RefreshLecturaAggregatesInput | null = null;
+let refreshDrainScheduled = false;
 let maintenanceStarted = false;
 const aggregatesDiagnostics = {
   queue_pending_jobs: 0,
@@ -70,6 +72,35 @@ function buildSensorFilterSql(column: string, sensorIds: number[]): { clause: st
   };
 }
 
+function buildDateTimeRangeSql(fechaColumn: string, horaColumn: string, from: Date, to: Date) {
+  return {
+    clause: `
+      (${fechaColumn} > DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} >= TIME(?)))
+      AND (${fechaColumn} < DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} <= TIME(?)))
+    `,
+    params: [from, from, from, to, to, to],
+  };
+}
+
+function mergeRefreshInputs(
+  current: RefreshLecturaAggregatesInput | null,
+  next: RefreshLecturaAggregatesInput,
+): RefreshLecturaAggregatesInput {
+  if (!current) return next;
+
+  const currentSensorIds = normalizeSensorIds(current.sensorIds);
+  const nextSensorIds = normalizeSensorIds(next.sensorIds);
+  const sensorIds = currentSensorIds.length === 0 || nextSensorIds.length === 0
+    ? undefined
+    : [...new Set([...currentSensorIds, ...nextSensorIds])].sort((a, b) => a - b);
+
+  return {
+    from: new Date(Math.min(current.from.getTime(), next.from.getTime())),
+    to: new Date(Math.max(current.to.getTime(), next.to.getTime())),
+    ...(sensorIds && sensorIds.length > 0 ? { sensorIds } : {}),
+  };
+}
+
 async function recomputePromedios(
   db: TxClient,
   from: Date,
@@ -77,15 +108,16 @@ async function recomputePromedios(
   sensorIds: number[],
 ): Promise<void> {
   const { clause, params } = buildSensorFilterSql('id_sensor_instalado', sensorIds);
+  const deleteRange = buildDateTimeRangeSql('fecha', 'hora', from, to);
+  const lecturaRange = buildDateTimeRangeSql('l.fecha', 'l.hora', from, to);
 
   await db.$executeRawUnsafe(
     `
       DELETE FROM promedio
-      WHERE TIMESTAMP(fecha, hora) BETWEEN ? AND ?
+      WHERE ${deleteRange.clause}
       ${clause}
     `,
-    from,
-    to,
+    ...deleteRange.params,
     ...params,
   );
 
@@ -105,14 +137,13 @@ async function recomputePromedios(
           ) AS bucket_ts,
           ROUND(AVG(l.valor), 2) AS promedio
         FROM lectura l
-        WHERE TIMESTAMP(l.fecha, l.hora) BETWEEN ? AND ?
+        WHERE ${lecturaRange.clause}
         ${sensorIds.length > 0 ? `AND l.id_sensor_instalado IN (${sensorIds.map(() => '?').join(', ')})` : ''}
         GROUP BY l.id_sensor_instalado, bucket_ts
       ) aggregated
       ON DUPLICATE KEY UPDATE promedio = VALUES(promedio)
     `,
-    from,
-    to,
+    ...lecturaRange.params,
     ...sensorIds,
   );
 }
@@ -124,15 +155,16 @@ async function recomputeResumenHorario(
   sensorIds: number[],
 ): Promise<void> {
   const { clause, params } = buildSensorFilterSql('id_sensor_instalado', sensorIds);
+  const deleteRange = buildDateTimeRangeSql('fecha', 'hora', from, to);
+  const lecturaRange = buildDateTimeRangeSql('l.fecha', 'l.hora', from, to);
 
   await db.$executeRawUnsafe(
     `
       DELETE FROM resumen_lectura_horaria
-      WHERE TIMESTAMP(fecha, hora) BETWEEN ? AND ?
+      WHERE ${deleteRange.clause}
       ${clause}
     `,
-    from,
-    to,
+    ...deleteRange.params,
     ...params,
   );
 
@@ -154,7 +186,7 @@ async function recomputeResumenHorario(
           ROUND(AVG(l.valor), 2) AS promedio,
           COUNT(*) AS registros
         FROM lectura l
-        WHERE TIMESTAMP(l.fecha, l.hora) BETWEEN ? AND ?
+        WHERE ${lecturaRange.clause}
         ${sensorIds.length > 0 ? `AND l.id_sensor_instalado IN (${sensorIds.map(() => '?').join(', ')})` : ''}
         GROUP BY l.id_sensor_instalado, bucket_ts
       ) aggregated
@@ -162,8 +194,7 @@ async function recomputeResumenHorario(
         promedio = VALUES(promedio),
         registros = VALUES(registros)
     `,
-    from,
-    to,
+    ...lecturaRange.params,
     ...sensorIds,
   );
 }
@@ -203,27 +234,49 @@ export async function refreshLecturaAggregatesWindow(
 }
 
 export function enqueueLecturaAggregatesRefresh(input: RefreshLecturaAggregatesInput): Promise<void> {
-  aggregatesDiagnostics.queue_pending_jobs += 1;
+  pendingRefreshInput = mergeRefreshInputs(pendingRefreshInput, input);
+  aggregatesDiagnostics.queue_pending_jobs = pendingRefreshInput ? 1 : 0;
   aggregatesDiagnostics.last_enqueued_at = new Date().toISOString();
+
+  if (refreshDrainScheduled) {
+    return refreshQueue;
+  }
+
+  refreshDrainScheduled = true;
 
   const task = refreshQueue
     .catch(() => undefined)
     .then(async () => {
-      try {
-        await refreshLecturaAggregatesWindow(input);
-        aggregatesDiagnostics.queue_completed_jobs += 1;
-      } catch (error: any) {
-        aggregatesDiagnostics.queue_failed_jobs += 1;
-        aggregatesDiagnostics.last_refresh_error_at = new Date().toISOString();
-        aggregatesDiagnostics.last_refresh_error_message =
-          error?.message || 'No se pudo recalcular agregados de lectura';
-        throw error;
-      } finally {
-        aggregatesDiagnostics.queue_pending_jobs = Math.max(0, aggregatesDiagnostics.queue_pending_jobs - 1);
+      let lastError: unknown = null;
+
+      while (pendingRefreshInput) {
+        const nextInput = pendingRefreshInput;
+        pendingRefreshInput = null;
+        aggregatesDiagnostics.queue_pending_jobs = 0;
+
+        try {
+          await refreshLecturaAggregatesWindow(nextInput);
+          aggregatesDiagnostics.queue_completed_jobs += 1;
+        } catch (error: any) {
+          lastError = error;
+          aggregatesDiagnostics.queue_failed_jobs += 1;
+          aggregatesDiagnostics.last_refresh_error_at = new Date().toISOString();
+          aggregatesDiagnostics.last_refresh_error_message =
+            error?.message || 'No se pudo recalcular agregados de lectura';
+        } finally {
+          aggregatesDiagnostics.queue_pending_jobs = pendingRefreshInput ? 1 : 0;
+        }
       }
+
+      if (lastError) throw lastError;
     });
 
-  refreshQueue = task.catch(() => undefined);
+  refreshQueue = task
+    .finally(() => {
+      refreshDrainScheduled = false;
+      aggregatesDiagnostics.queue_pending_jobs = pendingRefreshInput ? 1 : 0;
+    })
+    .catch(() => undefined);
   return task;
 }
 

@@ -142,7 +142,12 @@ async function resolveRoleRecord(
   roleInput: unknown,
   db: Prisma.TransactionClient | typeof prisma
 ): Promise<{ id: number; nombre: string; frontendRole: FrontendRole }> {
-  const roles = await db.tipo_rol.findMany();
+  const roles = await db.tipo_rol.findMany({
+    select: {
+      id_rol: true,
+      nombre: true,
+    },
+  });
 
   const explicitId = toInt(roleInput);
   if (explicitId) {
@@ -207,19 +212,40 @@ async function resolveRoleId(roleInput: unknown, db: Prisma.TransactionClient | 
   return role.id;
 }
 
+const usuarioWithRelationsSelect = {
+  id_usuario: true,
+  id_rol: true,
+  nombre_completo: true,
+  correo: true,
+  telefono: true,
+  estado: true,
+  fecha_creacion: true,
+  tipo_rol: {
+    select: {
+      id_rol: true,
+      nombre: true,
+    },
+  },
+  asignacion_usuario: {
+    select: {
+      id_organizacion_sucursal: true,
+      id_instalacion: true,
+      organizacion_sucursal: {
+        select: {
+          id_organizacion: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.usuarioSelect;
+
+const usuarioAuthSelect = {
+  ...usuarioWithRelationsSelect,
+  password_hash: true,
+} satisfies Prisma.usuarioSelect;
+
 type UsuarioWithRelations = Prisma.usuarioGetPayload<{
-  include: {
-    tipo_rol: true;
-    asignacion_usuario: {
-      include: {
-        organizacion_sucursal: {
-          select: {
-            id_organizacion: true;
-          };
-        };
-      };
-    };
-  };
+  select: typeof usuarioWithRelationsSelect;
 }>;
 
 function serializeUsuario(usuario: UsuarioWithRelations) {
@@ -482,18 +508,7 @@ async function getUsuarioWithRelations(
 ): Promise<UsuarioWithRelations | null> {
   return db.usuario.findUnique({
     where: { id_usuario: idUsuario },
-    include: {
-      tipo_rol: true,
-      asignacion_usuario: {
-        include: {
-          organizacion_sucursal: {
-            select: {
-              id_organizacion: true,
-            },
-          },
-        },
-      },
-    },
+    select: usuarioWithRelationsSelect,
   });
 }
 
@@ -581,18 +596,7 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
 
     const usuario = await prisma.usuario.findUnique({
       where: { correo: resolvedEmail },
-      include: {
-        tipo_rol: true,
-        asignacion_usuario: {
-          include: {
-            organizacion_sucursal: {
-              select: {
-                id_organizacion: true,
-              },
-            },
-          },
-        },
-      },
+      select: usuarioAuthSelect,
     });
 
     if (!usuario || !usuario.password_hash) {
@@ -615,6 +619,19 @@ export async function login(req: FastifyRequest, reply: FastifyReply) {
       id_rol: usuario.id_rol,
       email: usuario.correo,
       role,
+    });
+
+    // Emitir cookie httpOnly segura
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+    reply.setCookie('access_token', token, {
+      path: '/',
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     });
 
     return reply.send({ token, usuario: serializeUsuario(usuario) });
@@ -880,6 +897,17 @@ export async function getMe(req: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function logout(_req: FastifyRequest, reply: FastifyReply) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+  reply.clearCookie('access_token', {
+    path: '/',
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
+  });
+
   return reply.send({
     success: true,
     message: 'Sesión cerrada',
@@ -923,18 +951,7 @@ export async function getUsuarios(
 
     const usuarios = await prisma.usuario.findMany({
       where,
-      include: {
-        tipo_rol: true,
-        asignacion_usuario: {
-          include: {
-            organizacion_sucursal: {
-              select: {
-                id_organizacion: true,
-              },
-            },
-          },
-        },
-      },
+      select: usuarioWithRelationsSelect,
       orderBy: {
         fecha_creacion: 'desc',
       },

@@ -104,6 +104,7 @@ model organizacion_sucursal {
   organizacion             organizacion         @relation(fields: [id_organizacion], references: [id_organizacion], onDelete: Cascade, onUpdate: Restrict)
 
   @@index([id_organizacion], map: "idx_organizacion_sucursal_org")
+  @@index([id_organizacion, estado], map: "idx_organizacion_sucursal_org_estado")
   @@index([id_estado], map: "idx_organizacion_sucursal_estado")
   @@index([id_municipio], map: "idx_organizacion_sucursal_municipio")
   @@map("organizacion_sucursal")
@@ -132,6 +133,7 @@ model usuario {
   tipo_rol           tipo_rol             @relation(fields: [id_rol], references: [id_rol], onUpdate: Restrict, map: "fk_usuario_rol")
 
   @@index([id_rol], map: "fk_usuario_rol")
+  @@index([estado], map: "idx_usuario_estado")
   @@map("usuario")
 }
 
@@ -189,6 +191,7 @@ model instalacion {
   sensor_instalado         sensor_instalado[]
 
   @@index([id_organizacion_sucursal], map: "idx_ins_orgsuc")
+  @@index([id_organizacion_sucursal, estado_operativo], map: "idx_instalacion_sucursal_estado")
   @@index([id_proceso], map: "id_proceso")
   @@map("instalacion")
 }
@@ -203,6 +206,7 @@ model catalogo_sensores {
   unidad_medida    String?            @db.VarChar(45)
   sensor_instalado sensor_instalado[]
 
+  @@index([nombre], map: "idx_catalogo_sensores_nombre")
   @@map("catalogo_sensores")
 }
 
@@ -224,6 +228,7 @@ model sensor_instalado {
   lectura_sensor_instalado_id_lecturaTolectura lectura?                  @relation("sensor_instalado_id_lecturaTolectura", fields: [id_lectura], references: [id_lectura], onDelete: Restrict, onUpdate: Restrict, map: "sensor_instalado_ibfk_3")
 
   @@index([id_instalacion], map: "id_instalacion")
+  @@index([id_instalacion, id_sensor], map: "idx_sensor_instalado_inst_sensor")
   @@index([id_sensor], map: "id_sensor")
   @@index([id_lectura], map: "id_lectura")
   @@map("sensor_instalado")
@@ -259,6 +264,8 @@ model alertas {
 
   @@index([id_instalacion], map: "id_instalacion")
   @@index([id_sensor_instalado], map: "id_sensor_instalado")
+  @@index([fecha_alerta], map: "idx_alertas_fecha_alerta")
+  @@index([leida, fecha_alerta], map: "idx_alertas_leida_fecha")
   @@map("alertas")
 }
 
@@ -322,6 +329,7 @@ model procesos {
   especies                   especies                    @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "fk_proc_especie")
 
   @@index([id_especie], map: "id_especie")
+  @@index([estado], map: "idx_procesos_estado")
   @@map("procesos")
 }
 
@@ -386,6 +394,7 @@ model lectura {
   @@index([id_sensor_instalado, fecha], map: "idx_lectura_sensor_fecha")
   @@index([id_sensor_instalado, fecha, hora], map: "idx_lectura_sensor_fecha_hora")
   @@index([fecha], map: "idx_lectura_fecha")
+  @@index([fecha, hora, id_lectura], map: "idx_lectura_fecha_hora_id")
   @@index([id_sensor_instalado], map: "idx_lectura_id_sensor_instalado")
   @@map("lectura")
 }
@@ -399,6 +408,7 @@ model promedio {
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "promedio_ibfk_1")
 
   @@unique([id_sensor_instalado, fecha, hora], map: "uq_sensor_fecha_hora")
+  @@index([fecha, hora, pk_promedio], map: "idx_promedio_fecha_hora_id")
   @@map("promedio")
 }
 
@@ -412,6 +422,7 @@ model resumen_lectura_horaria {
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "resumen_lectura_horaria_ibfk_1")
 
   @@unique([id_sensor_instalado, fecha, hora], map: "uq_sensor_fecha_hora")
+  @@index([fecha, hora, id_resumen], map: "idx_resumen_horaria_fecha_hora_id")
   @@map("resumen_lectura_horaria")
 }
 

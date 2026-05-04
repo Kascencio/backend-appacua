@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import websocket from '@fastify/websocket';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
+import cookie from '@fastify/cookie';
 import { config } from './config/index.js';
 import { registerHealth } from './routes/health.routes.js';
 import { registerLecturasRoutes } from './routes/lecturas.routes.js';
@@ -45,13 +46,28 @@ await app.register(helmet, {
   crossOriginOpenerPolicy: false,
   originAgentCluster: false,
 });
+
+// CORS: en producción solo el frontend; en desarrollo cualquier origen
+const corsOrigin = config.env === 'production'
+  ? (process.env.FRONTEND_URL || 'https://app.midominio.com')
+  : true;
 await app.register(cors, {
-  origin: config.env === 'production' ? false : '*', // Configure in production
-  credentials: true
+  origin: corsOrigin,
+  credentials: true,
 });
 
+// Cookie plugin (para auth con httpOnly cookies)
+await app.register(cookie);
+
 await app.register(websocket);
-await app.register(jwt, { secret: config.jwtSecret });
+await app.register(jwt, {
+  secret: config.jwtSecret,
+  // Extraer token de cookie si no hay header Authorization
+  cookie: {
+    cookieName: 'access_token',
+    signed: false,
+  },
+});
 await app.register(rateLimit, {
   max: 300,
   timeWindow: '1 minute',

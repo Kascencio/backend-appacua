@@ -1,10 +1,41 @@
+# Git
 .git
 .gitignore
-.DS_Store
-.env
+.github
+
+# Dependencies (rebuilt in Docker)
 node_modules
+
+# Build output (rebuilt in Docker)
 dist
+
+# Environment
+.env
+.env.*
+
+# Documentation (not needed in image)
+*.md
+LICENSE
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
 logs
+*.log
 npm-debug.log*
 coverage
-*.md
+
+# Docker files (avoid recursive builds)
+docker-compose*.yml
+portainer*.yml
+Dockerfile
+
+# Scripts not needed in production image
+scripts/deploy-*.sh
+scripts/sql

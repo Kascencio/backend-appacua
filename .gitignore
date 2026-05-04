@@ -2,14 +2,15 @@
 node_modules/
 package-lock.json
 
-# Build
+# Build output
 dist/
 *.tsbuildinfo
 
-# Environment
+# Environment (NEVER commit real secrets)
 .env
 .env.local
 .env.*.local
+prisma/.env
 
 # Logs
 logs/
@@ -19,7 +20,7 @@ npm-debug.log*
 # PM2
 .pm2/
 
-# IDE
+# IDE / Editor
 .vscode/
 .idea/
 *.swp
@@ -30,5 +31,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Prisma
-prisma/.env
+# Docker overrides (local dev)
+docker-compose.override.yml
+
+# SQL dumps (use Prisma migrations instead)
+*.sql
+!prisma/migrations/**/*.sql
