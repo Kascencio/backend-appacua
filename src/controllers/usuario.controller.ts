@@ -13,7 +13,7 @@ import {
   requireRequestScope,
   type RequestScope,
 } from '../utils/access-control.js';
-import { sendAlertToTelegram } from '../services/telegram.service.js';
+import { sendTelegramAlertToAuthorizedUsers } from '../services/telegram.service.js';
 import { broadcastNotification } from '../services/ws.lecturas.server.js';
 import { sendPasswordRecoveryInstructions } from '../services/password-recovery.service.js';
 
@@ -703,6 +703,19 @@ export async function register(req: FastifyRequest, reply: FastifyReply) {
       role: frontendRole,
     });
 
+    // Emitir cookie httpOnly segura (igual que login)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+    reply.setCookie('access_token', token, {
+      path: '/',
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    });
+
     return reply.status(201).send({ token, usuario: serializeUsuario(usuario) });
   } catch (error: any) {
     return reply.status(500).send({ error: error.message || 'Error interno del servidor' });
@@ -744,6 +757,19 @@ export async function refreshToken(req: FastifyRequest, reply: FastifyReply) {
       id_rol: usuario.id_rol,
       email: usuario.correo,
       role: frontendRole,
+    });
+
+    // Actualizar cookie httpOnly segura con el nuevo token
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+    reply.setCookie('access_token', newToken, {
+      path: '/',
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     });
 
     return reply.send({ token: newToken });
@@ -1470,7 +1496,7 @@ export async function createAlerta(req: FastifyRequest, reply: FastifyReply) {
 
     emitAlertaNotification('alerta.created', payload);
 
-    const telegramResult = await sendAlertToTelegram({
+    const telegramResult = await sendTelegramAlertToAuthorizedUsers(idInstalacion, {
       id_alertas: payload.id_alertas,
       descripcion: payload.descripcion,
       dato_puntual: payload.dato_puntual,

@@ -426,6 +426,15 @@ model resumen_lectura_horaria {
   @@map("resumen_lectura_horaria")
 }
 
+model telegram_conversacion_estado {
+  chat_id            String   @id @db.VarChar(64)
+  estado             String   @default("inicio") @db.VarChar(50)
+  fecha_creacion     DateTime @default(now()) @db.DateTime(0)
+  ultima_interaccion DateTime @default(now()) @updatedAt @db.DateTime(0)
+
+  @@map("telegram_conversacion_estado")
+}
+
 enum organizacion_estado {
   activa
   inactiva

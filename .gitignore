@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Build output
 dist/
@@ -37,3 +36,4 @@ docker-compose.override.yml
 # SQL dumps (use Prisma migrations instead)
 *.sql
 !prisma/migrations/**/*.sql
+!scripts/sql/**/*.sql

@@ -1,7 +1,7 @@
 import { prisma } from '../repositories/prisma.js';
 import { enqueueLecturaAggregatesRefresh } from './lectura-aggregates.service.js';
 import { broadcastLecturaCreated, broadcastNotification } from './ws.lecturas.server.js';
-import { sendAlertToTelegram } from './telegram.service.js';
+import { sendTelegramAlertToAuthorizedUsers } from './telegram.service.js';
 
 type RangeRule = {
   min: number;
@@ -172,7 +172,7 @@ export function startLecturasPoller(intervalMs = 750) {
         pollerDiagnostics.alerts_created_total += 1;
         pollerDiagnostics.last_alert_created_at = new Date().toISOString();
 
-        void sendAlertToTelegram({
+        void sendTelegramAlertToAuthorizedUsers(instalacionId, {
           id_alertas: createdAlert.id_alertas,
           descripcion,
           dato_puntual: value,
