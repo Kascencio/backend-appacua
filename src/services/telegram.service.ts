@@ -107,28 +107,60 @@ async function sendTelegramMessageToChat(
   }
 }
 
-async function resolveTelegramAlertChatIds(): Promise<string[]> {
+async function resolveChatIdsForInstalacion(idInstalacion: number): Promise<string[]> {
   const configuredChatIds = config.telegramChatId ? [config.telegramChatId] : [];
 
   try {
-    const subscriptions = await prisma.telegram_suscripcion.findMany({
+    // 1. Encontrar la sucursal a la que pertenece esta instalación
+    const instalacion = await prisma.instalacion.findUnique({
+      where: { id_instalacion: idInstalacion },
+      select: { id_organizacion_sucursal: true },
+    });
+
+    if (!instalacion) {
+      return uniqueChatIds(configuredChatIds);
+    }
+
+    const idSucursal = instalacion.id_organizacion_sucursal;
+
+    // 2. Buscar usuarios con suscripción activa de telegram Y estado activo
+    const suscripcionesActivas = await prisma.telegram_suscripcion.findMany({
       where: {
         activo: true,
+        usuario: { estado: 'activo' },
+      },
+      include: {
         usuario: {
-          estado: 'activo',
-        },
-      },
-      select: {
-        chat_id: true,
-      },
+          include: {
+            tipo_rol: true,
+            asignacion_usuario: {
+              where: {
+                OR: [
+                  { id_instalacion: idInstalacion },
+                  { id_organizacion_sucursal: idSucursal, id_instalacion: null }
+                ]
+              }
+            }
+          }
+        }
+      }
     });
+
+    // 3. Filtrar los usuarios que tienen acceso
+    const authorizedChatIds = suscripcionesActivas
+      .filter(sub => {
+        const isSuperAdmin = sub.usuario.tipo_rol?.nombre?.toLowerCase() === 'superadmin';
+        const hasAssignment = sub.usuario.asignacion_usuario.length > 0;
+        return isSuperAdmin || hasAssignment;
+      })
+      .map(sub => sub.chat_id);
 
     return uniqueChatIds([
       ...configuredChatIds,
-      ...subscriptions.map((row) => row.chat_id),
+      ...authorizedChatIds,
     ]);
-  } catch {
-    // Mantener compatibilidad mientras se aplica la migracion SQL de telegram_suscripcion
+  } catch (error) {
+    console.error('Error resolviendo destinatarios para instalacion', idInstalacion, error);
     return uniqueChatIds(configuredChatIds);
   }
 }
@@ -194,10 +226,13 @@ export async function sendTelegramBroadcastMessage(
   return { ok: true, attempted, delivered };
 }
 
-export async function sendAlertToTelegram(payload: TelegramAlertPayload): Promise<TelegramSendResult> {
+export async function sendTelegramAlertToAuthorizedUsers(
+  id_instalacion: number,
+  payload: TelegramAlertPayload
+): Promise<TelegramSendResult> {
   const message = buildTelegramAlertMessage(payload);
   try {
-    const chatIds = await resolveTelegramAlertChatIds();
+    const chatIds = await resolveChatIdsForInstalacion(id_instalacion);
     return sendTelegramBroadcastMessage(message, chatIds, { parseMode: 'MarkdownV2' });
   } catch (error: any) {
     return {

@@ -12,6 +12,7 @@ dist
 # Environment
 .env
 .env.*
+!.env.example
 
 # Documentation (not needed in image)
 *.md
@@ -33,8 +34,10 @@ coverage
 
 # Docker files (avoid recursive builds)
 docker-compose*.yml
-portainer*.yml
 Dockerfile
+
+# Legacy deploy files
+deploy
 
 # Scripts not needed in production image
 scripts/deploy-*.sh

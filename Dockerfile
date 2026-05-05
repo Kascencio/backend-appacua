@@ -41,6 +41,12 @@ COPY --from=builder /app/dist ./dist
 # Regenerar Prisma Client para la plataforma correcta (linux-musl)
 RUN npx prisma generate
 
+# Usuario no root
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 --ingroup nodejs backend
+
+USER backend
+
 EXPOSE 3100
 
 # Ejecutar migraciones y arrancar
