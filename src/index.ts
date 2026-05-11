@@ -17,6 +17,7 @@ import { startTelegramWebhookBootstrap } from './services/telegram-webhook-boots
 import { startLecturaAggregatesMaintenance } from './services/lectura-aggregates.service.js';
 import { initLecturasWS } from './services/ws.lecturas.server.js';
 import { startLecturasPoller } from './services/lecturas.poller.js';
+import { runInitialSeedBootstrap } from './services/initial-seed-bootstrap.service.js';
 import { compressPayloadIfBeneficial } from './utils/http-compression.js';
 
 const app = Fastify({
@@ -132,6 +133,8 @@ await registerInstalacionRoutes(app);
 await registerUsuarioRoutes(app);
 await registerEspeciesRoutes(app);
 await registerTelegramRoutes(app);
+
+await runInitialSeedBootstrap(app);
 
 // Register WebSocket AFTER all HTTP routes but BEFORE listen
 await initLecturasWS(app);

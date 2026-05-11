@@ -50,5 +50,5 @@ USER backend
 
 EXPOSE 3100
 
-# Ejecutar migraciones, correr el seed y arrancar
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && node dist/index.js"]
+# Ejecutar migraciones y arrancar (seed se ejecuta dentro del bootstrap de la app)
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
