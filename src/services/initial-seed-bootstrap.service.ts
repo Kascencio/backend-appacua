@@ -240,9 +240,11 @@ async function ensureAssignment(params: {
 }
 
 async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
-  const [superadmin, mvergel, org] = await Promise.all([
+  const [superadmin, mvergel, admin, operador, org, rolSuperadmin, rolAdmin, rolOperador] = await Promise.all([
     prisma.usuario.findUnique({ where: { correo: 'superadmin@example.com' } }),
     prisma.usuario.findUnique({ where: { correo: 'mvergel@gmail.com' } }),
+    prisma.usuario.findUnique({ where: { correo: 'admin@example.com' } }),
+    prisma.usuario.findUnique({ where: { correo: 'operador@example.com' } }),
     prisma.organizacion.findFirst({
       where: {
         nombre: {
@@ -250,9 +252,13 @@ async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
         },
       },
     }),
+    prisma.tipo_rol.findFirst({ where: { nombre: { equals: 'SUPERADMIN' } } }),
+    prisma.tipo_rol.findFirst({ where: { nombre: { equals: 'ADMIN' } } }),
+    prisma.tipo_rol.findFirst({ where: { nombre: { equals: 'OPERADOR' } } }),
   ]);
 
-  if (!superadmin || !mvergel || !org) return false;
+  if (!superadmin || !mvergel || !admin || !operador || !org) return false;
+  if (!rolSuperadmin || !rolAdmin || !rolOperador) return false;
 
   const branch = await prisma.organizacion_sucursal.findFirst({
     where: {
@@ -313,7 +319,14 @@ async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
 
   if (!hasSpecies || !hasSensors) return false;
 
-  const [superadminBranchAssignment, mvergelBranchAssignment] = await Promise.all([
+  const [
+    superadminBranchAssignment,
+    mvergelBranchAssignment,
+    adminBranchAssignment,
+    operadorBranchAssignment,
+    adminFacilityAssignment,
+    operadorFacilityAssignment,
+  ] = await Promise.all([
     prisma.asignacion_usuario.findFirst({
       where: {
         id_usuario: superadmin.id_usuario,
@@ -328,9 +341,44 @@ async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
         id_instalacion: null,
       },
     }),
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: admin.id_usuario,
+        id_organizacion_sucursal: branch.id_organizacion_sucursal,
+        id_instalacion: null,
+      },
+    }),
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: operador.id_usuario,
+        id_organizacion_sucursal: branch.id_organizacion_sucursal,
+        id_instalacion: null,
+      },
+    }),
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: admin.id_usuario,
+        id_organizacion_sucursal: null,
+        id_instalacion: installation.id_instalacion,
+      },
+    }),
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: operador.id_usuario,
+        id_organizacion_sucursal: null,
+        id_instalacion: installation.id_instalacion,
+      },
+    }),
   ]);
 
-  return Boolean(superadminBranchAssignment && mvergelBranchAssignment);
+  return Boolean(
+    superadminBranchAssignment &&
+      mvergelBranchAssignment &&
+      adminBranchAssignment &&
+      operadorBranchAssignment &&
+      adminFacilityAssignment &&
+      operadorFacilityAssignment,
+  );
 }
 
 export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<void> {
@@ -368,6 +416,8 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
   });
 
   const rolSuperadmin = await ensureRole('SUPERADMIN');
+  const rolAdmin = await ensureRole('ADMIN');
+  const rolOperador = await ensureRole('OPERADOR');
 
   const parametroTemperatura = await ensureParametro('Temperatura', '°C');
   const parametroPH = await ensureParametro('pH', 'pH');
@@ -448,9 +498,11 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
   await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto', '0 a 20 mg/L');
   await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad', '0 a 45 ppt');
 
-  const [superadminPasswordHash, mvergelPasswordHash] = await Promise.all([
+  const [superadminPasswordHash, mvergelPasswordHash, adminPasswordHash, operadorPasswordHash] = await Promise.all([
     bcrypt.hash(DEFAULT_PASSWORD, 10),
     bcrypt.hash(MVERGEL_PASSWORD, 10),
+    bcrypt.hash(DEFAULT_PASSWORD, 10),
+    bcrypt.hash(DEFAULT_PASSWORD, 10),
   ]);
 
   const superadmin = await ensureUser({
@@ -465,6 +517,20 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
     correo: 'mvergel@gmail.com',
     idRol: rolSuperadmin.id_rol,
     passwordHash: mvergelPasswordHash,
+  });
+
+  const admin = await ensureUser({
+    nombre: 'Admin Operativo',
+    correo: 'admin@example.com',
+    idRol: rolAdmin.id_rol,
+    passwordHash: adminPasswordHash,
+  });
+
+  const operador = await ensureUser({
+    nombre: 'Operador de Campo',
+    correo: 'operador@example.com',
+    idRol: rolOperador.id_rol,
+    passwordHash: operadorPasswordHash,
   });
 
   const existingOrg = await prisma.organizacion.findFirst({
@@ -668,6 +734,30 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
 
   await ensureAssignment({
     idUsuario: mvergel.id_usuario,
+    idSucursal: null,
+    idInstalacion: instalacion.id_instalacion,
+  });
+
+  await ensureAssignment({
+    idUsuario: admin.id_usuario,
+    idSucursal: sucursal.id_organizacion_sucursal,
+    idInstalacion: null,
+  });
+
+  await ensureAssignment({
+    idUsuario: operador.id_usuario,
+    idSucursal: sucursal.id_organizacion_sucursal,
+    idInstalacion: null,
+  });
+
+  await ensureAssignment({
+    idUsuario: admin.id_usuario,
+    idSucursal: null,
+    idInstalacion: instalacion.id_instalacion,
+  });
+
+  await ensureAssignment({
+    idUsuario: operador.id_usuario,
     idSucursal: null,
     idInstalacion: instalacion.id_instalacion,
   });
