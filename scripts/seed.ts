@@ -305,6 +305,15 @@ async function ensureAssignment(params: {
 async function main() {
   console.log('Seeding started...');
 
+  const alreadySeeded = await prisma.usuario.findUnique({
+    where: { correo: 'mvergel@gmail.com' },
+  });
+
+  if (alreadySeeded) {
+    console.log('La base de datos ya contiene la información base (seed verificado). Omitiendo seed...');
+    return;
+  }
+
   const today = atStartOfDay(new Date());
 
   const estado = await prisma.estados.upsert({
