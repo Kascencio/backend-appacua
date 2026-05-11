@@ -1,30 +1,15 @@
-import { PrismaClient, type proceso_estado } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { refreshLecturaAggregatesWindow } from '../src/services/lectura-aggregates.service.js';
 
 const prisma = new PrismaClient();
 
 const DEFAULT_PASSWORD = '123456';
-const HISTORY_DAYS = 14;
-const STEP_HOURS = 6;
+const MVERGEL_PASSWORD = '105090Vergel';
 
-type InstallationTemplate = {
-  org: string;
-  branch: string;
-  installation: string;
-  species: string;
-  processName: string;
-  status: proceso_estado;
-  startOffsetDays: number;
-  durationDays: number;
-  descripcion: string;
-  lat: number;
-  lng: number;
-  capacidadMaxima: number;
-  capacidadActual: number;
-  volumen: number;
-  profundidad: number;
-};
+const TECNM_ORG_NAME = 'TecNM Campus Villahermosa';
+const TECNM_BRANCH_NAME = 'Laboratorio de Acuicultura';
+const TECNM_INSTALLATION_NAME = 'Estanque Experimental 1';
+const TECNM_PROCESS_NAME = 'Investigación Tilapia G1';
 
 function atStartOfDay(date: Date): Date {
   const d = new Date(date);
@@ -38,74 +23,12 @@ function addDays(date: Date, days: number): Date {
   return d;
 }
 
-function addHours(date: Date, hours: number): Date {
-  const d = new Date(date);
-  d.setHours(d.getHours() + hours);
-  return d;
-}
-
-function timePart(date: Date): Date {
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return new Date(`1970-01-01T${hh}:${mm}:${ss}Z`);
-}
-
 function normalize(text: string): string {
   return text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
-}
-
-function sensorKind(
-  sensorName: string,
-): 'temperature' | 'ph' | 'oxygen' | 'salinity' | 'turbidity' | 'nitrates' | 'ammonia' | 'conductivity' | 'orp' | 'other' {
-  const key = normalize(sensorName);
-  if (key.includes('temperatura')) return 'temperature';
-  if (key === 'ph' || key.includes('potencial')) return 'ph';
-  if (key.includes('oxigeno') || key.includes('oxygen')) return 'oxygen';
-  if (key.includes('salinidad')) return 'salinity';
-  if (key.includes('turbidez')) return 'turbidity';
-  if (key.includes('nitrato') || key.includes('nitrate')) return 'nitrates';
-  if (key.includes('amonio') || key.includes('amoniaco') || key.includes('ammonia')) return 'ammonia';
-  if (key.includes('conductividad') || key.includes('conductivity')) return 'conductivity';
-  if (key.includes('orp') || key.includes('redox')) return 'orp';
-  return 'other';
-}
-
-function pseudoRandom(seed: number): number {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-function readingValue(kind: ReturnType<typeof sensorKind>, step: number, sensorId: number): number {
-  const noise = (pseudoRandom(step + sensorId) - 0.5) * 2;
-  const seasonal = Math.sin(step / 3);
-
-  switch (kind) {
-    case 'temperature':
-      return Number((25 + seasonal * 1.8 + noise * 0.9).toFixed(2));
-    case 'ph':
-      return Number((7.2 + seasonal * 0.25 + noise * 0.08).toFixed(2));
-    case 'oxygen':
-      return Number((6.8 + seasonal * 0.6 + noise * 0.35).toFixed(2));
-    case 'salinity':
-      return Number((17.5 + seasonal * 1.4 + noise * 0.6).toFixed(2));
-    case 'turbidity':
-      return Number((12 + Math.abs(seasonal) * 8 + Math.abs(noise) * 3).toFixed(2));
-    case 'nitrates':
-      return Number((18 + Math.abs(seasonal) * 6 + Math.abs(noise) * 2.2).toFixed(2));
-    case 'ammonia':
-      return Number((0.25 + Math.abs(seasonal) * 0.2 + Math.abs(noise) * 0.08).toFixed(3));
-    case 'conductivity':
-      return Number((1200 + seasonal * 140 + noise * 60).toFixed(2));
-    case 'orp':
-      return Number((275 + seasonal * 35 + noise * 15).toFixed(2));
-    default:
-      return Number((50 + seasonal * 5 + noise * 2).toFixed(2));
-  }
 }
 
 async function ensureRole(name: string) {
@@ -142,7 +65,12 @@ async function ensureParametro(nombre_parametro: string, unidad_medida: string) 
   });
 }
 
-async function ensureCatalogoSensor(nombre: string, unidad_medida: string, descripcion: string) {
+async function ensureCatalogoSensor(
+  nombre: string,
+  unidad_medida: string,
+  descripcion: string,
+  rango_medicion: string,
+) {
   const existing = await prisma.catalogo_sensores.findFirst({
     where: {
       nombre: {
@@ -151,8 +79,18 @@ async function ensureCatalogoSensor(nombre: string, unidad_medida: string, descr
     },
   });
 
-  // Nunca modificar sensores/tipos existentes: solo agregar nuevos si faltan.
-  if (existing) return existing;
+  if (existing) {
+    return prisma.catalogo_sensores.update({
+      where: { id_sensor: existing.id_sensor },
+      data: {
+        descripcion,
+        unidad_medida,
+        modelo: 'AQM-Gen2',
+        marca: 'AquaSense',
+        rango_medicion,
+      },
+    });
+  }
 
   return prisma.catalogo_sensores.create({
     data: {
@@ -161,7 +99,7 @@ async function ensureCatalogoSensor(nombre: string, unidad_medida: string, descr
       unidad_medida,
       modelo: 'AQM-Gen2',
       marca: 'AquaSense',
-      rango_medicion: 'Automático',
+      rango_medicion,
     },
   });
 }
@@ -302,19 +240,112 @@ async function ensureAssignment(params: {
   });
 }
 
+async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
+  const [superadmin, mvergel, org] = await Promise.all([
+    prisma.usuario.findUnique({ where: { correo: 'superadmin@example.com' } }),
+    prisma.usuario.findUnique({ where: { correo: 'mvergel@gmail.com' } }),
+    prisma.organizacion.findFirst({
+      where: {
+        nombre: {
+          equals: TECNM_ORG_NAME,
+        },
+      },
+    }),
+  ]);
+
+  if (!superadmin || !mvergel || !org) return false;
+
+  const branch = await prisma.organizacion_sucursal.findFirst({
+    where: {
+      id_organizacion: org.id_organizacion,
+      nombre_sucursal: {
+        equals: TECNM_BRANCH_NAME,
+      },
+    },
+  });
+
+  if (!branch) return false;
+
+  const installation = await prisma.instalacion.findFirst({
+    where: {
+      id_organizacion_sucursal: branch.id_organizacion_sucursal,
+      nombre_instalacion: {
+        equals: TECNM_INSTALLATION_NAME,
+      },
+    },
+  });
+
+  if (!installation) return false;
+
+  const [speciesRows, sensorRows] = await Promise.all([
+    prisma.especies.findMany({
+      where: {
+        nombre: {
+          in: [
+            'Tilapia',
+            'Camarón Blanco',
+            'Trucha Arcoíris',
+            'Carpa Común',
+            'Bagre de Canal',
+            'Ostión Japonés',
+          ],
+        },
+      },
+      select: { nombre: true },
+    }),
+    prisma.catalogo_sensores.findMany({
+      where: {
+        nombre: {
+          in: ['Temperatura', 'pH', 'Oxígeno Disuelto', 'Salinidad'],
+        },
+      },
+      select: { nombre: true },
+    }),
+  ]);
+
+  const speciesSet = new Set(speciesRows.map((item) => normalize(item.nombre)));
+  const sensorsSet = new Set(sensorRows.map((item) => normalize(item.nombre)));
+
+  const requiredSpecies = ['tilapia', 'camaron blanco', 'trucha arcoiris', 'carpa comun', 'bagre de canal', 'ostion japones'];
+  const requiredSensors = ['temperatura', 'ph', 'oxigeno disuelto', 'salinidad'];
+
+  const hasSpecies = requiredSpecies.every((name) => speciesSet.has(name));
+  const hasSensors = requiredSensors.every((name) => sensorsSet.has(name));
+
+  if (!hasSpecies || !hasSensors) return false;
+
+  const [superadminBranchAssignment, mvergelBranchAssignment] = await Promise.all([
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: superadmin.id_usuario,
+        id_organizacion_sucursal: branch.id_organizacion_sucursal,
+        id_instalacion: null,
+      },
+    }),
+    prisma.asignacion_usuario.findFirst({
+      where: {
+        id_usuario: mvergel.id_usuario,
+        id_organizacion_sucursal: branch.id_organizacion_sucursal,
+        id_instalacion: null,
+      },
+    }),
+  ]);
+
+  return Boolean(superadminBranchAssignment && mvergelBranchAssignment);
+}
+
 async function main() {
   console.log('Seeding started...');
 
-  const alreadySeeded = await prisma.usuario.findUnique({
-    where: { correo: 'mvergel@gmail.com' },
-  });
-
-  if (alreadySeeded) {
-    console.log('La base de datos ya contiene la información base (seed verificado). Omitiendo seed...');
+  const alreadyApplied = await isTecnmSeedAlreadyApplied();
+  if (alreadyApplied) {
+    console.log('Seed TecNM ya aplicado. Omitiendo ejecución.');
     return;
   }
 
   const today = atStartOfDay(new Date());
+  const processStart = atStartOfDay(addDays(today, -30));
+  const processEnd = atStartOfDay(addDays(processStart, 120));
 
   const estado = await prisma.estados.upsert({
     where: { id_estado: 1 },
@@ -332,151 +363,6 @@ async function main() {
   });
 
   const rolSuperadmin = await ensureRole('SUPERADMIN');
-  const rolAdmin = await ensureRole('ADMIN');
-  const rolOperador = await ensureRole('OPERADOR');
-
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
-
-  const superadmin = await ensureUser({
-    nombre: 'Super Admin',
-    correo: 'superadmin@example.com',
-    idRol: rolSuperadmin.id_rol,
-    passwordHash,
-  });
-
-  const passwordHashMvergel = await bcrypt.hash('105090Vergel', 10);
-  const mvergelSuperadmin = await ensureUser({
-    nombre: 'MVergel Superadmin',
-    correo: 'mvergel@gmail.com',
-    idRol: rolSuperadmin.id_rol,
-    passwordHash: passwordHashMvergel,
-  });
-
-  const admin = await ensureUser({
-    nombre: 'Admin Operativo',
-    correo: 'admin@example.com',
-    idRol: rolAdmin.id_rol,
-    passwordHash,
-  });
-
-  const operador = await ensureUser({
-    nombre: 'Operador de Campo',
-    correo: 'operador@example.com',
-    idRol: rolOperador.id_rol,
-    passwordHash,
-  });
-
-  const organizacionesData = [
-    {
-      nombre: 'TecNM Campus Villahermosa',
-      razon_social: 'Instituto Tecnológico de Villahermosa',
-      rfc: 'ITV010101AA1',
-      correo: 'contacto@villahermosa.tecnm.mx',
-      telefono: '+52 993 312 0000',
-      direccion: 'Av. Instituto Tecnológico S/N, Indeco, 86010 Villahermosa, Tab.',
-      latitud: 18.0169,
-      longitud: -92.9069,
-      branches: [
-        {
-          nombre_sucursal: 'Laboratorio de Acuicultura',
-          direccion_sucursal: 'Edificio de Ciencias Biológicas, TecNM Villahermosa',
-          latitud: 18.0169,
-          longitud: -92.9069,
-        },
-      ],
-    },
-  ];
-
-  const orgByName = new Map<string, { id_organizacion: number }>();
-  const branchByKey = new Map<string, { id_organizacion_sucursal: number }>();
-
-  for (const orgData of organizacionesData) {
-    const existingOrg = await prisma.organizacion.findFirst({
-      where: {
-        nombre: {
-          equals: orgData.nombre,
-        },
-      },
-    });
-
-    const org = existingOrg
-      ? await prisma.organizacion.update({
-          where: { id_organizacion: existingOrg.id_organizacion },
-          data: {
-            razon_social: orgData.razon_social,
-            rfc: orgData.rfc,
-            correo: orgData.correo,
-            telefono: orgData.telefono,
-            direccion: orgData.direccion,
-            id_estado: estado.id_estado,
-            id_municipio: municipio.id_municipio,
-            estado: 'activa',
-            latitud: orgData.latitud,
-            longitud: orgData.longitud,
-          },
-        })
-      : await prisma.organizacion.create({
-          data: {
-            nombre: orgData.nombre,
-            razon_social: orgData.razon_social,
-            rfc: orgData.rfc,
-            correo: orgData.correo,
-            telefono: orgData.telefono,
-            direccion: orgData.direccion,
-            id_estado: estado.id_estado,
-            id_municipio: municipio.id_municipio,
-            estado: 'activa',
-            latitud: orgData.latitud,
-            longitud: orgData.longitud,
-          },
-        });
-
-    orgByName.set(orgData.nombre, { id_organizacion: org.id_organizacion });
-
-    for (const branchData of orgData.branches) {
-      const existingBranch = await prisma.organizacion_sucursal.findFirst({
-        where: {
-          id_organizacion: org.id_organizacion,
-          nombre_sucursal: {
-            equals: branchData.nombre_sucursal,
-          },
-        },
-      });
-
-      const branch = existingBranch
-        ? await prisma.organizacion_sucursal.update({
-            where: { id_organizacion_sucursal: existingBranch.id_organizacion_sucursal },
-            data: {
-              direccion_sucursal: branchData.direccion_sucursal,
-              telefono_sucursal: orgData.telefono,
-              correo_sucursal: orgData.correo,
-              id_estado: estado.id_estado,
-              id_municipio: municipio.id_municipio,
-              estado: 'activa',
-              latitud: branchData.latitud,
-              longitud: branchData.longitud,
-            },
-          })
-        : await prisma.organizacion_sucursal.create({
-            data: {
-              id_organizacion: org.id_organizacion,
-              nombre_sucursal: branchData.nombre_sucursal,
-              direccion_sucursal: branchData.direccion_sucursal,
-              telefono_sucursal: orgData.telefono,
-              correo_sucursal: orgData.correo,
-              id_estado: estado.id_estado,
-              id_municipio: municipio.id_municipio,
-              estado: 'activa',
-              latitud: branchData.latitud,
-              longitud: branchData.longitud,
-            },
-          });
-
-      branchByKey.set(`${orgData.nombre}::${branchData.nombre_sucursal}`, {
-        id_organizacion_sucursal: branch.id_organizacion_sucursal,
-      });
-    }
-  }
 
   const parametroTemperatura = await ensureParametro('Temperatura', '°C');
   const parametroPH = await ensureParametro('pH', 'pH');
@@ -542,10 +428,6 @@ async function main() {
 
   const especies = await Promise.all(especiesBase.map((params) => ensureEspecie(params)));
 
-  const especieByName = new Map<string, { id_especie: number }>(
-    especies.map((especie) => [especie.nombre, { id_especie: especie.id_especie }]),
-  );
-
   for (const especie of especies) {
     const config = especiesBase.find((item) => item.nombre === especie.nombre);
     if (!config) continue;
@@ -556,367 +438,239 @@ async function main() {
     await ensureEspecieParametro(especie.id_especie, parametroSalinidad.id_parametro, config.salinidad[0], config.salinidad[1]);
   }
 
-  const installationTemplates: InstallationTemplate[] = [
-    {
-      org: 'TecNM Campus Villahermosa',
-      branch: 'Laboratorio de Acuicultura',
-      installation: 'Estanque Experimental 1',
-      species: 'Tilapia',
-      processName: 'Investigación Tilapia G1',
-      status: 'en_progreso',
-      startOffsetDays: -30,
-      durationDays: 120,
-      descripcion: 'Estanque experimental para prácticas de Ingeniería',
-      lat: 18.0169,
-      lng: -92.9069,
-      capacidadMaxima: 5000,
-      capacidadActual: 3000,
-      volumen: 1000,
-      profundidad: 1.2,
-    },
-  ];
+  await ensureCatalogoSensor('Temperatura', '°C', 'Sensor de temperatura del agua', '0 a 50 °C');
+  await ensureCatalogoSensor('pH', 'pH', 'Sensor de potencial de hidrógeno', '0 a 14 pH');
+  await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto', '0 a 20 mg/L');
+  await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad', '0 a 45 ppt');
 
-  const installedById = new Map<number, { id_instalacion: number; nombre_instalacion: string }>();
+  const [superadminPasswordHash, mvergelPasswordHash] = await Promise.all([
+    bcrypt.hash(DEFAULT_PASSWORD, 10),
+    bcrypt.hash(MVERGEL_PASSWORD, 10),
+  ]);
 
-  for (const template of installationTemplates) {
-    const species = especieByName.get(template.species);
-    const branch = branchByKey.get(`${template.org}::${template.branch}`);
+  const superadmin = await ensureUser({
+    nombre: 'Super Admin',
+    correo: 'superadmin@example.com',
+    idRol: rolSuperadmin.id_rol,
+    passwordHash: superadminPasswordHash,
+  });
 
-    if (!species || !branch) {
-      continue;
-    }
+  const mvergel = await ensureUser({
+    nombre: 'MVergel Superadmin',
+    correo: 'mvergel@gmail.com',
+    idRol: rolSuperadmin.id_rol,
+    passwordHash: mvergelPasswordHash,
+  });
 
-    const fechaInicio = atStartOfDay(addDays(today, template.startOffsetDays));
-    const fechaFinal = atStartOfDay(addDays(fechaInicio, template.durationDays));
-    const progreso = template.status === 'planificado'
-      ? 0
-      : template.status === 'completado'
-        ? 100
-        : Math.max(1, Math.min(99, Math.round(((today.getTime() - fechaInicio.getTime()) / (fechaFinal.getTime() - fechaInicio.getTime())) * 100)));
-
-    const existingProceso = await prisma.procesos.findFirst({
-      where: {
-        nombre_proceso: {
-          equals: template.processName,
-        },
-      },
-    });
-
-    const proceso = existingProceso
-      ? await prisma.procesos.update({
-          where: { id_proceso: existingProceso.id_proceso },
-          data: {
-            id_especie: species.id_especie,
-            descripcion: `Seguimiento productivo para ${template.species} en ${template.installation}`,
-            objetivos: 'Mantener parámetros óptimos y maximizar supervivencia',
-            estado: template.status,
-            porcentaje_avance: progreso,
-            fecha_inicio: fechaInicio,
-            fecha_final: fechaFinal,
-            fecha_fin_real: template.status === 'completado' ? fechaFinal : null,
-          },
-        })
-      : await prisma.procesos.create({
-          data: {
-            id_especie: species.id_especie,
-            nombre_proceso: template.processName,
-            descripcion: `Seguimiento productivo para ${template.species} en ${template.installation}`,
-            objetivos: 'Mantener parámetros óptimos y maximizar supervivencia',
-            estado: template.status,
-            porcentaje_avance: progreso,
-            fecha_inicio: fechaInicio,
-            fecha_final: fechaFinal,
-            fecha_fin_real: template.status === 'completado' ? fechaFinal : null,
-          },
-        });
-
-    const existingInstalacion = await prisma.instalacion.findFirst({
-      where: {
-        id_organizacion_sucursal: branch.id_organizacion_sucursal,
-        nombre_instalacion: {
-          equals: template.installation,
-        },
-      },
-    });
-
-    const instalacion = existingInstalacion
-      ? await prisma.instalacion.update({
-          where: { id_instalacion: existingInstalacion.id_instalacion },
-          data: {
-            id_proceso: proceso.id_proceso,
-            fecha_instalacion: atStartOfDay(addDays(fechaInicio, -12)),
-            estado_operativo: 'activo',
-            descripcion: template.descripcion,
-            tipo_uso: 'acuicultura',
-            codigo_instalacion: template.installation
-              .toUpperCase()
-              .replace(/[^A-Z0-9]/g, '')
-              .slice(0, 12),
-            ubicacion: `${template.branch} (${template.org})`,
-            latitud: template.lat,
-            longitud: template.lng,
-            capacidad_maxima: template.capacidadMaxima,
-            capacidad_actual: template.capacidadActual,
-            volumen_agua_m3: template.volumen,
-            profundidad_m: template.profundidad,
-            fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
-            responsable_operativo: 'Ing. Operaciones TecNM',
-            contacto_emergencia: '+52 993 222 3344',
-          },
-        })
-      : await prisma.instalacion.create({
-          data: {
-            id_organizacion_sucursal: branch.id_organizacion_sucursal,
-            id_proceso: proceso.id_proceso,
-            nombre_instalacion: template.installation,
-            fecha_instalacion: atStartOfDay(addDays(fechaInicio, -12)),
-            estado_operativo: 'activo',
-            descripcion: template.descripcion,
-            tipo_uso: 'acuicultura',
-            codigo_instalacion: template.installation
-              .toUpperCase()
-              .replace(/[^A-Z0-9]/g, '')
-              .slice(0, 12),
-            ubicacion: `${template.branch} (${template.org})`,
-            latitud: template.lat,
-            longitud: template.lng,
-            capacidad_maxima: template.capacidadMaxima,
-            capacidad_actual: template.capacidadActual,
-            volumen_agua_m3: template.volumen,
-            profundidad_m: template.profundidad,
-            fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
-            responsable_operativo: 'Ing. Operaciones TecNM',
-            contacto_emergencia: '+52 993 222 3344',
-          },
-        });
-
-    installedById.set(instalacion.id_instalacion, {
-      id_instalacion: instalacion.id_instalacion,
-      nombre_instalacion: instalacion.nombre_instalacion,
-    });
-  }
-
-  const sensoresCatalogo = [
-    await ensureCatalogoSensor('Temperatura', '°C', 'Sensor de temperatura del agua'),
-    await ensureCatalogoSensor('pH', 'pH', 'Sensor de potencial de hidrógeno'),
-    await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto'),
-    await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad'),
-  ];
-
-  const sensoresInstalados: Array<{
-    id_sensor_instalado: number;
-    id_sensor: number;
-    id_instalacion: number;
-    sensorNombre: string;
-  }> = [];
-
-  for (const instalacion of installedById.values()) {
-    for (const sensor of sensoresCatalogo) {
-      const existingByType = await prisma.sensor_instalado.findFirst({
-        where: {
-          id_instalacion: instalacion.id_instalacion,
-          id_sensor: sensor.id_sensor,
-        },
-      });
-
-      // No tocar sensores existentes de la instalación; solo agregar nuevos.
-      if (existingByType) {
-        continue;
-      }
-
-      const sensorInstalado = await prisma.sensor_instalado.create({
-        data: {
-          id_instalacion: instalacion.id_instalacion,
-          id_sensor: sensor.id_sensor,
-          fecha_instalada: addDays(today, -90),
-          descripcion: `[SEED] ${sensor.nombre} - ${instalacion.nombre_instalacion}`,
-        },
-      });
-
-      sensoresInstalados.push({
-        id_sensor_instalado: sensorInstalado.id_sensor_instalado,
-        id_sensor: sensor.id_sensor,
-        id_instalacion: instalacion.id_instalacion,
-        sensorNombre: sensor.nombre,
-      });
-    }
-  }
-
-  const allBranchIds = Array.from(branchByKey.values()).map((b) => b.id_organizacion_sucursal);
-  for (const branchId of allBranchIds) {
-    await ensureAssignment({ idUsuario: superadmin.id_usuario, idSucursal: branchId, idInstalacion: null });
-    await ensureAssignment({ idUsuario: mvergelSuperadmin.id_usuario, idSucursal: branchId, idInstalacion: null });
-  }
-
-  for (const branchId of allBranchIds) {
-    await ensureAssignment({ idUsuario: admin.id_usuario, idSucursal: branchId, idInstalacion: null });
-  }
-
-  const seededInstallations = Array.from(installedById.values());
-  const firstAdminFacility = sensoresInstalados[0]?.id_instalacion ?? seededInstallations[0]?.id_instalacion;
-  if (firstAdminFacility) {
-    await ensureAssignment({
-      idUsuario: superadmin.id_usuario,
-      idSucursal: null,
-      idInstalacion: firstAdminFacility,
-    });
-
-    await ensureAssignment({
-      idUsuario: mvergelSuperadmin.id_usuario,
-      idSucursal: null,
-      idInstalacion: firstAdminFacility,
-    });
-
-    await ensureAssignment({
-      idUsuario: admin.id_usuario,
-      idSucursal: null,
-      idInstalacion: firstAdminFacility,
-    });
-
-    await ensureAssignment({
-      idUsuario: operador.id_usuario,
-      idSucursal: null,
-      idInstalacion: firstAdminFacility,
-    });
-  }
-
-  const firstBranchId = allBranchIds[0];
-  if (firstBranchId) {
-    await ensureAssignment({
-      idUsuario: operador.id_usuario,
-      idSucursal: firstBranchId,
-      idInstalacion: null,
-    });
-  }
-
-  const historyStart = addDays(today, -HISTORY_DAYS);
-  const now = new Date();
-
-  for (const sensor of sensoresInstalados) {
-    const existingCount = await prisma.lectura.count({
-      where: {
-        id_sensor_instalado: sensor.id_sensor_instalado,
-        fecha: {
-          gte: historyStart,
-        },
-      },
-    });
-
-    const minimumRows = Math.ceil((HISTORY_DAYS * 24) / STEP_HOURS) - 4;
-    if (existingCount >= minimumRows) {
-      continue;
-    }
-
-    const data: Array<{
-      id_sensor_instalado: number;
-      valor: number;
-      fecha: Date;
-      hora: Date;
-    }> = [];
-
-    let cursor = new Date(historyStart);
-    let step = 0;
-    while (cursor <= now) {
-      const kind = sensorKind(sensor.sensorNombre);
-      let valor = readingValue(kind, step, sensor.id_sensor_instalado);
-
-      // Inyectar una variación puntual para simular eventos reales.
-      if (step % 19 === 0 && kind === 'oxygen') {
-        valor = Math.max(2.5, Number((valor - 2.1).toFixed(2)));
-      }
-      if (step % 23 === 0 && kind === 'temperature') {
-        valor = Number((valor + 2.4).toFixed(2));
-      }
-
-      data.push({
-        id_sensor_instalado: sensor.id_sensor_instalado,
-        valor,
-        fecha: atStartOfDay(cursor),
-        hora: timePart(cursor),
-      });
-
-      cursor = addHours(cursor, STEP_HOURS);
-      step += 1;
-    }
-
-    if (data.length > 0) {
-      await prisma.lectura.createMany({
-        data,
-      });
-    }
-  }
-
-  for (const sensor of sensoresInstalados) {
-    const latest = await prisma.lectura.findFirst({
-      where: { id_sensor_instalado: sensor.id_sensor_instalado },
-      orderBy: [{ fecha: 'desc' }, { hora: 'desc' }],
-      select: { id_lectura: true },
-    });
-
-    if (latest) {
-      await prisma.sensor_instalado.update({
-        where: { id_sensor_instalado: sensor.id_sensor_instalado },
-        data: { id_lectura: latest.id_lectura },
-      });
-    }
-  }
-
-  if (sensoresInstalados.length > 0) {
-    await refreshLecturaAggregatesWindow({
-      from: historyStart,
-      to: now,
-      sensorIds: sensoresInstalados.map((sensor) => sensor.id_sensor_instalado),
-    });
-  }
-
-  const alertCandidates = sensoresInstalados.slice(0, 4);
-  for (const sensor of alertCandidates) {
-    const latest = await prisma.lectura.findFirst({
-      where: { id_sensor_instalado: sensor.id_sensor_instalado },
-      orderBy: [{ fecha: 'desc' }, { hora: 'desc' }],
-      select: { valor: true },
-    });
-
-    if (!latest) continue;
-
-    const existingAlert = await prisma.alertas.findFirst({
-      where: {
-        id_sensor_instalado: sensor.id_sensor_instalado,
-        descripcion: {
-          equals: 'Seed: valor fuera de rango operativo',
-        },
-      },
-    });
-
-    if (existingAlert) continue;
-
-    await prisma.alertas.create({
-      data: {
-        id_instalacion: sensor.id_instalacion,
-        id_sensor_instalado: sensor.id_sensor_instalado,
-        descripcion: 'Seed: valor fuera de rango operativo',
-        dato_puntual: latest.valor,
-      },
-    });
-  }
-
-  const totalInstalaciones = await prisma.instalacion.count();
-  const totalSensores = await prisma.sensor_instalado.count();
-  const totalLecturas = await prisma.lectura.count({
+  const existingOrg = await prisma.organizacion.findFirst({
     where: {
-      fecha: {
-        gte: historyStart,
+      nombre: {
+        equals: TECNM_ORG_NAME,
       },
     },
   });
 
+  const organizacion = existingOrg
+    ? await prisma.organizacion.update({
+        where: { id_organizacion: existingOrg.id_organizacion },
+        data: {
+          razon_social: 'Instituto Tecnológico de Villahermosa',
+          rfc: 'ITV010101AA1',
+          correo: 'contacto@villahermosa.tecnm.mx',
+          telefono: '+52 993 312 0000',
+          direccion: 'Av. Instituto Tecnológico S/N, Indeco, 86010 Villahermosa, Tab.',
+          id_estado: estado.id_estado,
+          id_municipio: municipio.id_municipio,
+          estado: 'activa',
+          latitud: 18.0169,
+          longitud: -92.9069,
+        },
+      })
+    : await prisma.organizacion.create({
+        data: {
+          nombre: TECNM_ORG_NAME,
+          razon_social: 'Instituto Tecnológico de Villahermosa',
+          rfc: 'ITV010101AA1',
+          correo: 'contacto@villahermosa.tecnm.mx',
+          telefono: '+52 993 312 0000',
+          direccion: 'Av. Instituto Tecnológico S/N, Indeco, 86010 Villahermosa, Tab.',
+          id_estado: estado.id_estado,
+          id_municipio: municipio.id_municipio,
+          estado: 'activa',
+          latitud: 18.0169,
+          longitud: -92.9069,
+        },
+      });
+
+  const existingBranch = await prisma.organizacion_sucursal.findFirst({
+    where: {
+      id_organizacion: organizacion.id_organizacion,
+      nombre_sucursal: {
+        equals: TECNM_BRANCH_NAME,
+      },
+    },
+  });
+
+  const sucursal = existingBranch
+    ? await prisma.organizacion_sucursal.update({
+        where: { id_organizacion_sucursal: existingBranch.id_organizacion_sucursal },
+        data: {
+          direccion_sucursal: 'Edificio de Ciencias Biológicas, TecNM Villahermosa',
+          telefono_sucursal: '+52 993 312 0000',
+          correo_sucursal: 'contacto@villahermosa.tecnm.mx',
+          id_estado: estado.id_estado,
+          id_municipio: municipio.id_municipio,
+          estado: 'activa',
+          latitud: 18.0169,
+          longitud: -92.9069,
+        },
+      })
+    : await prisma.organizacion_sucursal.create({
+        data: {
+          id_organizacion: organizacion.id_organizacion,
+          nombre_sucursal: TECNM_BRANCH_NAME,
+          direccion_sucursal: 'Edificio de Ciencias Biológicas, TecNM Villahermosa',
+          telefono_sucursal: '+52 993 312 0000',
+          correo_sucursal: 'contacto@villahermosa.tecnm.mx',
+          id_estado: estado.id_estado,
+          id_municipio: municipio.id_municipio,
+          estado: 'activa',
+          latitud: 18.0169,
+          longitud: -92.9069,
+        },
+      });
+
+  const especieTilapia = especies.find((item) => item.nombre === 'Tilapia');
+  if (!especieTilapia) {
+    throw new Error('No se pudo resolver la especie Tilapia para crear el proceso base.');
+  }
+
+  const existingProcess = await prisma.procesos.findFirst({
+    where: {
+      nombre_proceso: {
+        equals: TECNM_PROCESS_NAME,
+      },
+    },
+  });
+
+  const processProgress = Math.max(
+    1,
+    Math.min(
+      99,
+      Math.round(((today.getTime() - processStart.getTime()) / (processEnd.getTime() - processStart.getTime())) * 100),
+    ),
+  );
+
+  const proceso = existingProcess
+    ? await prisma.procesos.update({
+        where: { id_proceso: existingProcess.id_proceso },
+        data: {
+          id_especie: especieTilapia.id_especie,
+          descripcion: 'Seguimiento productivo para Tilapia en Estanque Experimental 1',
+          objetivos: 'Mantener parámetros óptimos y maximizar supervivencia',
+          estado: 'en_progreso',
+          porcentaje_avance: processProgress,
+          fecha_inicio: processStart,
+          fecha_final: processEnd,
+          fecha_fin_real: null,
+        },
+      })
+    : await prisma.procesos.create({
+        data: {
+          id_especie: especieTilapia.id_especie,
+          nombre_proceso: TECNM_PROCESS_NAME,
+          descripcion: 'Seguimiento productivo para Tilapia en Estanque Experimental 1',
+          objetivos: 'Mantener parámetros óptimos y maximizar supervivencia',
+          estado: 'en_progreso',
+          porcentaje_avance: processProgress,
+          fecha_inicio: processStart,
+          fecha_final: processEnd,
+          fecha_fin_real: null,
+        },
+      });
+
+  const existingInstallation = await prisma.instalacion.findFirst({
+    where: {
+      id_organizacion_sucursal: sucursal.id_organizacion_sucursal,
+      nombre_instalacion: {
+        equals: TECNM_INSTALLATION_NAME,
+      },
+    },
+  });
+
+  const instalacion = existingInstallation
+    ? await prisma.instalacion.update({
+        where: { id_instalacion: existingInstallation.id_instalacion },
+        data: {
+          id_proceso: proceso.id_proceso,
+          fecha_instalacion: atStartOfDay(addDays(processStart, -12)),
+          estado_operativo: 'activo',
+          descripcion: 'Estanque experimental para prácticas de Ingeniería',
+          tipo_uso: 'acuicultura',
+          codigo_instalacion: 'ESTANQUEEXP1',
+          ubicacion: `${TECNM_BRANCH_NAME} (${TECNM_ORG_NAME})`,
+          latitud: 18.0169,
+          longitud: -92.9069,
+          capacidad_maxima: 5000,
+          capacidad_actual: 3000,
+          volumen_agua_m3: 1000,
+          profundidad_m: 1.2,
+          fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
+          responsable_operativo: 'Ing. Operaciones TecNM',
+          contacto_emergencia: '+52 993 222 3344',
+        },
+      })
+    : await prisma.instalacion.create({
+        data: {
+          id_organizacion_sucursal: sucursal.id_organizacion_sucursal,
+          id_proceso: proceso.id_proceso,
+          nombre_instalacion: TECNM_INSTALLATION_NAME,
+          fecha_instalacion: atStartOfDay(addDays(processStart, -12)),
+          estado_operativo: 'activo',
+          descripcion: 'Estanque experimental para prácticas de Ingeniería',
+          tipo_uso: 'acuicultura',
+          codigo_instalacion: 'ESTANQUEEXP1',
+          ubicacion: `${TECNM_BRANCH_NAME} (${TECNM_ORG_NAME})`,
+          latitud: 18.0169,
+          longitud: -92.9069,
+          capacidad_maxima: 5000,
+          capacidad_actual: 3000,
+          volumen_agua_m3: 1000,
+          profundidad_m: 1.2,
+          fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
+          responsable_operativo: 'Ing. Operaciones TecNM',
+          contacto_emergencia: '+52 993 222 3344',
+        },
+      });
+
+  await ensureAssignment({
+    idUsuario: superadmin.id_usuario,
+    idSucursal: sucursal.id_organizacion_sucursal,
+    idInstalacion: null,
+  });
+
+  await ensureAssignment({
+    idUsuario: mvergel.id_usuario,
+    idSucursal: sucursal.id_organizacion_sucursal,
+    idInstalacion: null,
+  });
+
+  await ensureAssignment({
+    idUsuario: superadmin.id_usuario,
+    idSucursal: null,
+    idInstalacion: instalacion.id_instalacion,
+  });
+
+  await ensureAssignment({
+    idUsuario: mvergel.id_usuario,
+    idSucursal: null,
+    idInstalacion: instalacion.id_instalacion,
+  });
+
   console.log('Seeding completed successfully.');
-  console.log(`Superadmin: superadmin@example.com / ${DEFAULT_PASSWORD}`);
-  console.log(`Admin: admin@example.com / ${DEFAULT_PASSWORD}`);
-  console.log(`Operador: operador@example.com / ${DEFAULT_PASSWORD}`);
-  console.log(`Instalaciones: ${totalInstalaciones}`);
-  console.log(`Sensores instalados: ${totalSensores}`);
-  console.log(`Lecturas (${HISTORY_DAYS} días): ${totalLecturas}`);
+  console.log(`Organization: ${TECNM_ORG_NAME}`);
+  console.log(`Users: superadmin@example.com, mvergel@gmail.com`);
+  console.log(`Installation: ${TECNM_INSTALLATION_NAME}`);
 }
 
 main()
