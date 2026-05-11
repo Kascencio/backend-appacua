@@ -37,6 +37,7 @@ RUN npm cache clean --force
 # Copiar Prisma (schema + migraciones) y build
 COPY prisma ./prisma
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/scripts ./scripts
 
 # Regenerar Prisma Client para la plataforma correcta (linux-musl)
 RUN npx prisma generate
