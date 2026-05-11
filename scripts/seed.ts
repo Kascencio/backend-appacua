@@ -335,6 +335,14 @@ async function main() {
     passwordHash,
   });
 
+  const passwordHashMvergel = await bcrypt.hash('105090Vergel', 10);
+  const mvergelSuperadmin = await ensureUser({
+    nombre: 'MVergel Superadmin',
+    correo: 'mvergel@gmail.com',
+    idRol: rolSuperadmin.id_rol,
+    passwordHash: passwordHashMvergel,
+  });
+
   const admin = await ensureUser({
     nombre: 'Admin Operativo',
     correo: 'admin@example.com',
@@ -351,20 +359,20 @@ async function main() {
 
   const organizacionesData = [
     {
-      nombre: 'Aqua Principal',
-      razon_social: 'Aqua Principal S.A. de C.V.',
-      rfc: 'APR010101AA1',
-      correo: 'contacto@aquaprincipal.com',
-      telefono: '+52 993 100 1001',
-      direccion: 'Carretera Villahermosa - Frontera km 12',
-      latitud: 17.9892,
-      longitud: -92.9361,
+      nombre: 'TecNM Campus Villahermosa',
+      razon_social: 'Instituto Tecnológico de Villahermosa',
+      rfc: 'ITV010101AA1',
+      correo: 'contacto@villahermosa.tecnm.mx',
+      telefono: '+52 993 312 0000',
+      direccion: 'Av. Instituto Tecnológico S/N, Indeco, 86010 Villahermosa, Tab.',
+      latitud: 18.0169,
+      longitud: -92.9069,
       branches: [
         {
-          nombre_sucursal: 'Sucursal Principal',
-          direccion_sucursal: 'Ranchería Río Viejo, Centro, Tabasco',
-          latitud: 17.9951,
-          longitud: -92.9302,
+          nombre_sucursal: 'Laboratorio de Acuicultura',
+          direccion_sucursal: 'Edificio de Ciencias Biológicas, TecNM Villahermosa',
+          latitud: 18.0169,
+          longitud: -92.9069,
         },
       ],
     },
@@ -541,21 +549,21 @@ async function main() {
 
   const installationTemplates: InstallationTemplate[] = [
     {
-      org: 'Aqua Principal',
-      branch: 'Sucursal Principal',
-      installation: 'Estanque Principal',
+      org: 'TecNM Campus Villahermosa',
+      branch: 'Laboratorio de Acuicultura',
+      installation: 'Estanque Experimental 1',
       species: 'Tilapia',
-      processName: 'Proceso Principal de Tilapia',
+      processName: 'Investigación Tilapia G1',
       status: 'en_progreso',
       startOffsetDays: -30,
       durationDays: 120,
-      descripcion: 'Estanque principal de engorda con aireación mecánica',
-      lat: 17.9956,
-      lng: -92.9309,
-      capacidadMaxima: 12000,
-      capacidadActual: 8600,
-      volumen: 3500,
-      profundidad: 1.7,
+      descripcion: 'Estanque experimental para prácticas de Ingeniería',
+      lat: 18.0169,
+      lng: -92.9069,
+      capacidadMaxima: 5000,
+      capacidadActual: 3000,
+      volumen: 1000,
+      profundidad: 1.2,
     },
   ];
 
@@ -643,7 +651,7 @@ async function main() {
             volumen_agua_m3: template.volumen,
             profundidad_m: template.profundidad,
             fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
-            responsable_operativo: 'Ing. Operaciones Aqua',
+            responsable_operativo: 'Ing. Operaciones TecNM',
             contacto_emergencia: '+52 993 222 3344',
           },
         })
@@ -668,7 +676,7 @@ async function main() {
             volumen_agua_m3: template.volumen,
             profundidad_m: template.profundidad,
             fecha_ultima_inspeccion: atStartOfDay(addDays(today, -2)),
-            responsable_operativo: 'Ing. Operaciones Aqua',
+            responsable_operativo: 'Ing. Operaciones TecNM',
             contacto_emergencia: '+52 993 222 3344',
           },
         });
@@ -728,6 +736,7 @@ async function main() {
   const allBranchIds = Array.from(branchByKey.values()).map((b) => b.id_organizacion_sucursal);
   for (const branchId of allBranchIds) {
     await ensureAssignment({ idUsuario: superadmin.id_usuario, idSucursal: branchId, idInstalacion: null });
+    await ensureAssignment({ idUsuario: mvergelSuperadmin.id_usuario, idSucursal: branchId, idInstalacion: null });
   }
 
   for (const branchId of allBranchIds) {
@@ -739,6 +748,12 @@ async function main() {
   if (firstAdminFacility) {
     await ensureAssignment({
       idUsuario: superadmin.id_usuario,
+      idSucursal: null,
+      idInstalacion: firstAdminFacility,
+    });
+
+    await ensureAssignment({
+      idUsuario: mvergelSuperadmin.id_usuario,
       idSucursal: null,
       idInstalacion: firstAdminFacility,
     });
