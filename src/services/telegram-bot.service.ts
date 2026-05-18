@@ -28,6 +28,7 @@ const COMMAND_START = '/start';
 const COMMAND_STATUS = '/status';
 const COMMAND_UNLINK = '/unlink';
 const COMMAND_HELP = '/help';
+const COMMAND_SWITCH = '/switchlink';
 
 async function sendPlainTelegramMessage(message: string, chatId: string): Promise<void> {
   await sendTelegramMessage(message, chatId, { parseMode: null });
@@ -35,13 +36,22 @@ async function sendPlainTelegramMessage(message: string, chatId: string): Promis
 
 async function handleCommandStart(targetChatId: string, isLinked: boolean) {
   if (isLinked) {
-    await sendPlainTelegramMessage('Ya tienes una cuenta vinculada a este chat. Usa /status para ver los detalles o /unlink para desvincularla.', targetChatId);
+    // Permite re-vinculación aunque el chat ya esté vinculado
+    await updateConversationState(targetChatId, 'esperando_email');
+    await sendPlainTelegramMessage(
+      'Tienes una cuenta vinculada. Si deseas vincular este chat a otra cuenta, envía el nuevo correo electrónico ahora.\n' +
+      'Para mantener la vinculación actual usa /status.\n' +
+      'Para desvincular usa /unlink.',
+      targetChatId
+    );
     return;
   }
-  
+
   await updateConversationState(targetChatId, 'esperando_email');
   await sendPlainTelegramMessage(
-    'Hola, para vincular tu cuenta y recibir alertas, envíame el correo con el que inicias sesión en la plataforma.',
+    'Hola, para vincular tu cuenta y recibir alertas, envíame el correo con el que inicias sesión en la plataforma.\n' +
+    'Un mismo correo puede tener múltiples chats vinculados.\n' +
+    'Un chat solo puede estar vinculado a un correo a la vez.',
     targetChatId
   );
 }
@@ -53,13 +63,20 @@ async function handleCommandStatus(targetChatId: string) {
   });
 
   if (suscripcion && suscripcion.activo && suscripcion.usuario.estado === 'activo') {
+    // Contar cuántos chats tiene ese usuario
+    const totalChats = await prisma.telegram_suscripcion.count({
+      where: { id_usuario: suscripcion.id_usuario, activo: true }
+    });
     await sendPlainTelegramMessage(
-      `Estás vinculado a la cuenta: ${suscripcion.usuario.correo} (${suscripcion.usuario.nombre_completo}). Estás recibiendo alertas activamente.`,
+      `✅ Vinculado a: ${suscripcion.usuario.correo} (${suscripcion.usuario.nombre_completo})\n` +
+      `📱 Chats activos con esta cuenta: ${totalChats}\n` +
+      `🔔 Recibes alertas activamente.\n\n` +
+      `Usa /switchlink para cambiar a otro correo o /unlink para desvincular este chat.`,
       targetChatId
     );
   } else {
     await sendPlainTelegramMessage(
-      'No tienes ninguna cuenta vinculada o tu cuenta está inactiva. Usa /start para iniciar el proceso de vinculación.',
+      'No tienes ninguna cuenta vinculada o tu cuenta está inactiva.\nUsa /start para iniciar el proceso de vinculación.',
       targetChatId
     );
   }
@@ -68,10 +85,15 @@ async function handleCommandStatus(targetChatId: string) {
 async function handleCommandUnlink(targetChatId: string) {
   await clearConversationState(targetChatId);
   try {
-    await prisma.telegram_suscripcion.delete({
+    const deleted = await prisma.telegram_suscripcion.delete({
       where: { chat_id: targetChatId }
     });
-    await sendPlainTelegramMessage('Tu cuenta ha sido desvinculada exitosamente. Ya no recibirás notificaciones.', targetChatId);
+    await sendPlainTelegramMessage(
+      `✅ Este chat ha sido desvinculado de la cuenta ${deleted.id_usuario}.\n` +
+      `Ya no recibirás notificaciones en este chat.\n` +
+      `Usa /start para volver a vincular cuando quieras.`,
+      targetChatId
+    );
   } catch (error: any) {
     if (error.code === 'P2025') {
       await sendPlainTelegramMessage('No tienes ninguna cuenta vinculada actualmente.', targetChatId);
@@ -84,10 +106,22 @@ async function handleCommandUnlink(targetChatId: string) {
 async function handleCommandHelp(targetChatId: string) {
   await sendPlainTelegramMessage(
     'Comandos disponibles:\n' +
-    '/start - Iniciar vinculación de cuenta\n' +
-    '/status - Ver estado actual de tu vinculación\n' +
-    '/unlink - Desvincular tu cuenta\n' +
-    '/help - Mostrar este mensaje de ayuda',
+    '/start - Vincular este chat a una cuenta\n' +
+    '/status - Ver estado actual de la vinculación\n' +
+    '/unlink - Desvincular este chat\n' +
+    '/switchlink - Cambiar a otro correo\n' +
+    '/help - Mostrar este mensaje\n\n' +
+    'ℹ️ Un correo puede vincularse a múltiples chats.\n' +
+    'Un chat solo puede estar vinculado a un correo a la vez.',
+    targetChatId
+  );
+}
+
+async function handleCommandSwitchLink(targetChatId: string) {
+  await updateConversationState(targetChatId, 'esperando_email');
+  await sendPlainTelegramMessage(
+    'Envía el correo electrónico al que deseas vincular este chat.\n' +
+    'La vinculación anterior de este chat será reemplazada.',
     targetChatId
   );
 }
@@ -112,16 +146,19 @@ async function handleEmailInput(rawText: string, targetChatId: string, message: 
   });
 
   if (!usuario) {
-    await sendPlainTelegramMessage('El correo no está autorizado o está inactivo. Verifica que el correo exista e intenta nuevamente.', targetChatId);
+    await sendPlainTelegramMessage(
+      'El correo no está autorizado o está inactivo.\n' +
+      'Verifica que el correo exista en la plataforma e intenta nuevamente.\n' +
+      'Puedes intentar con otro correo o usar /help.',
+      targetChatId
+    );
     return;
   }
 
   try {
-    // Desvincular este usuario de cualquier otro chat para mantener 1 a 1 (opcional pero más limpio)
-    await prisma.telegram_suscripcion.deleteMany({
-      where: { id_usuario: usuario.id_usuario }
-    });
-
+    // upsert: si este chat ya existe lo reasigna al nuevo usuario; si no, lo crea.
+    // Esto permite que UN CHAT cambie de usuario (re-vinculación),
+    // y que UN USUARIO tenga MÚLTIPLES chats (no se borran los otros chats del usuario).
     await prisma.telegram_suscripcion.upsert({
       where: {
         chat_id: targetChatId,
@@ -144,12 +181,21 @@ async function handleEmailInput(rawText: string, targetChatId: string, message: 
 
     await updateConversationState(targetChatId, 'vinculado');
 
+    // Contar cuántos chats tiene el usuario ahora
+    const totalChats = await prisma.telegram_suscripcion.count({
+      where: { id_usuario: usuario.id_usuario, activo: true }
+    });
+
     await sendPlainTelegramMessage(
-      `¡Vinculación exitosa!\nTu cuenta ha sido vinculada, bienvenido ${usuario.nombre_completo}.\nAhora recibirás alertas únicamente de las instalaciones a las que tienes acceso.\nUsa /help para ver comandos.`,
+      `✅ ¡Vinculación exitosa!\n` +
+      `Bienvenido, ${usuario.nombre_completo}.\n` +
+      `Este chat ahora recibe alertas de tu cuenta.\n` +
+      `📱 Total de chats vinculados a tu cuenta: ${totalChats}\n\n` +
+      `Usa /help para ver los comandos disponibles.`,
       targetChatId
     );
   } catch (error) {
-    await sendPlainTelegramMessage('No fue posible activar tus notificaciones en este momento. Intenta nuevamente en unos minutos.', targetChatId);
+    await sendPlainTelegramMessage('No fue posible activar tus notificaciones. Intenta nuevamente en unos minutos.', targetChatId);
   }
 }
 
@@ -164,9 +210,8 @@ export async function processTelegramWebhookUpdate(update: TelegramWebhookUpdate
 
   const targetChatId = String(chatId);
   const isCommand = rawText.startsWith('/');
-  const baseCommand = rawText.split(' ')[0].toLowerCase().split('@')[0]; // Maneja /start@BotName
+  const baseCommand = rawText.split(' ')[0].toLowerCase().split('@')[0];
 
-  // Comprobar si ya esta vinculado
   const suscripcion = await prisma.telegram_suscripcion.findUnique({
     where: { chat_id: targetChatId }
   });
@@ -183,6 +228,9 @@ export async function processTelegramWebhookUpdate(update: TelegramWebhookUpdate
       case COMMAND_UNLINK:
         await handleCommandUnlink(targetChatId);
         return;
+      case COMMAND_SWITCH:
+        await handleCommandSwitchLink(targetChatId);
+        return;
       case COMMAND_HELP:
         await handleCommandHelp(targetChatId);
         return;
@@ -193,15 +241,14 @@ export async function processTelegramWebhookUpdate(update: TelegramWebhookUpdate
   }
 
   // Flujo state machine para texto plano
-  if (!isLinked) {
-    const state = await getConversationState(targetChatId);
-    if (state === 'esperando_email') {
-      await handleEmailInput(rawText, targetChatId, message);
-    } else {
-      await sendPlainTelegramMessage('Por favor, envía /start para iniciar el proceso de vinculación.', targetChatId);
-    }
-  } else {
-    // Ya esta vinculado y envía texto que no es comando
+  const state = await getConversationState(targetChatId);
+
+  if (state === 'esperando_email') {
+    await handleEmailInput(rawText, targetChatId, message);
+  } else if (isLinked) {
     await sendPlainTelegramMessage('Tu cuenta ya está vinculada. Usa /help para ver los comandos disponibles.', targetChatId);
+  } else {
+    await sendPlainTelegramMessage('Usa /start para iniciar el proceso de vinculación.', targetChatId);
   }
 }
+
