@@ -239,6 +239,41 @@ async function ensureAssignment(params: {
   });
 }
 
+async function ensureSensorInstalado(params: {
+  idInstalacion: number;
+  idSensor: number;
+  descripcion: string;
+  fechaInstalada: Date;
+}) {
+  const existing = await prisma.sensor_instalado.findFirst({
+    where: {
+      id_instalacion: params.idInstalacion,
+      id_sensor: params.idSensor,
+    },
+  });
+
+  if (existing) {
+    return prisma.sensor_instalado.update({
+      where: { id_sensor_instalado: existing.id_sensor_instalado },
+      data: {
+        descripcion: params.descripcion,
+        fecha_instalada: params.fechaInstalada,
+        estado_operativo: 'activo',
+      },
+    });
+  }
+
+  return prisma.sensor_instalado.create({
+    data: {
+      id_instalacion: params.idInstalacion,
+      id_sensor: params.idSensor,
+      descripcion: params.descripcion,
+      fecha_instalada: params.fechaInstalada,
+      estado_operativo: 'activo',
+    },
+  });
+}
+
 async function isTecnmSeedAlreadyApplied(): Promise<boolean> {
   const [superadmin, mvergel, admin, operador, org, rolSuperadmin, rolAdmin, rolOperador] = await Promise.all([
     prisma.usuario.findUnique({ where: { correo: 'superadmin@example.com' } }),
@@ -493,10 +528,10 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
     await ensureEspecieParametro(especie.id_especie, parametroSalinidad.id_parametro, config.salinidad[0], config.salinidad[1]);
   }
 
-  await ensureCatalogoSensor('Temperatura', '°C', 'Sensor de temperatura del agua', '0 a 50 °C');
-  await ensureCatalogoSensor('pH', 'pH', 'Sensor de potencial de hidrógeno', '0 a 14 pH');
-  await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto', '0 a 20 mg/L');
-  await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad', '0 a 45 ppt');
+  const sensorTemperatura = await ensureCatalogoSensor('Temperatura', '°C', 'Sensor de temperatura del agua', '0 a 50 °C');
+  const sensorPH = await ensureCatalogoSensor('pH', 'pH', 'Sensor de potencial de hidrógeno', '0 a 14 pH');
+  const sensorOxigeno = await ensureCatalogoSensor('Oxígeno Disuelto', 'mg/L', 'Sensor óptico de oxígeno disuelto', '0 a 20 mg/L');
+  const sensorSalinidad = await ensureCatalogoSensor('Salinidad', 'ppt', 'Sensor de salinidad', '0 a 45 ppt');
 
   const [superadminPasswordHash, mvergelPasswordHash, adminPasswordHash, operadorPasswordHash] = await Promise.all([
     bcrypt.hash(DEFAULT_PASSWORD, 10),
@@ -760,6 +795,37 @@ export async function runInitialSeedBootstrap(app: FastifyInstance): Promise<voi
     idUsuario: operador.id_usuario,
     idSucursal: null,
     idInstalacion: instalacion.id_instalacion,
+  });
+
+  // Sensores instalados en la instalación
+  const sensorFechaInstalacion = atStartOfDay(addDays(processStart, -10));
+
+  await ensureSensorInstalado({
+    idInstalacion: instalacion.id_instalacion,
+    idSensor: sensorTemperatura.id_sensor,
+    descripcion: 'Sensor Temperatura - Estanque Exp 1',
+    fechaInstalada: sensorFechaInstalacion,
+  });
+
+  await ensureSensorInstalado({
+    idInstalacion: instalacion.id_instalacion,
+    idSensor: sensorPH.id_sensor,
+    descripcion: 'Sensor pH - Estanque Exp 1',
+    fechaInstalada: sensorFechaInstalacion,
+  });
+
+  await ensureSensorInstalado({
+    idInstalacion: instalacion.id_instalacion,
+    idSensor: sensorOxigeno.id_sensor,
+    descripcion: 'Sensor O₂ Disuelto - Estanque Exp 1',
+    fechaInstalada: sensorFechaInstalacion,
+  });
+
+  await ensureSensorInstalado({
+    idInstalacion: instalacion.id_instalacion,
+    idSensor: sensorSalinidad.id_sensor,
+    descripcion: 'Sensor Salinidad - Estanque Exp 1',
+    fechaInstalada: sensorFechaInstalacion,
   });
 
   app.log.info('Seeding completed successfully (bootstrap).');
