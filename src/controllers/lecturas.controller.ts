@@ -447,13 +447,23 @@ function appendDateTimeRangeSqlCondition(
   let nextQuery = query;
 
   if (from) {
-    nextQuery += ` AND (${fechaColumn} > DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} >= TIME(?)))`;
-    params.push(from, from, from);
+    const d = new Date(from);
+    if (!Number.isNaN(d.getTime())) {
+      const fromDate = d.toISOString().slice(0, 10);
+      const fromTime = d.toISOString().slice(11, 19);
+      nextQuery += ` AND (${fechaColumn} > ? OR (${fechaColumn} = ? AND ${horaColumn} >= ?))`;
+      params.push(fromDate, fromDate, fromTime);
+    }
   }
 
   if (to) {
-    nextQuery += ` AND (${fechaColumn} < DATE(?) OR (${fechaColumn} = DATE(?) AND ${horaColumn} <= TIME(?)))`;
-    params.push(to, to, to);
+    const d = new Date(to);
+    if (!Number.isNaN(d.getTime())) {
+      const toDate = d.toISOString().slice(0, 10);
+      const toTime = d.toISOString().slice(11, 19);
+      nextQuery += ` AND (${fechaColumn} < ? OR (${fechaColumn} = ? AND ${horaColumn} <= ?))`;
+      params.push(toDate, toDate, toTime);
+    }
   }
 
   return nextQuery;
