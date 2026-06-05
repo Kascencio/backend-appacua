@@ -64,10 +64,34 @@ function getRangeRule(sensorType: string): RangeRule | null {
   return null;
 }
 
+const ALERT_COOLDOWN_DB_SKIP_CACHE_MS = 5_000; // caché en memoria de 5s para no consultar la BD en cada tick
+const lastAlertCacheByKey = new Map<number, { ts: number; checkedAt: number }>();
+
+async function isCoolingDown(sensorInstaladoId: number, now: number): Promise<boolean> {
+  const cached = lastAlertCacheByKey.get(sensorInstaladoId);
+  // Si tenemos el dato en caché y la caché es reciente, usarla
+  if (cached && now - cached.checkedAt < ALERT_COOLDOWN_DB_SKIP_CACHE_MS) {
+    return now - cached.ts < ALERT_COOLDOWN_MS;
+  }
+
+  // Consultar la última alerta en BD
+  try {
+    const last = await prisma.alertas.findFirst({
+      where: { id_sensor_instalado: sensorInstaladoId },
+      orderBy: { fecha_alerta: 'desc' },
+      select: { fecha_alerta: true },
+    });
+    const lastTs = last ? last.fecha_alerta.getTime() : 0;
+    lastAlertCacheByKey.set(sensorInstaladoId, { ts: lastTs, checkedAt: now });
+    return now - lastTs < ALERT_COOLDOWN_MS;
+  } catch {
+    return false; // si falla la consulta, permitir la alerta
+  }
+}
+
 export function startLecturasPoller(intervalMs = 750) {
   let lastSeenId = 0n;
   let running = false;
-  const lastAlertBySensor = new Map<number, number>();
   pollerDiagnostics.started = true;
   pollerDiagnostics.interval_ms = intervalMs;
 
@@ -105,7 +129,9 @@ export function startLecturasPoller(intervalMs = 750) {
           sensor_instalado_id: r.id_sensor_instalado,
           instalacion_id: r.id_instalacion,
           tipo_medida: r.tipo_medida,
-          tomada_en: new Date(r.tomada_en).toISOString(),
+          // CAST(CONCAT(fecha,' ',hora)) devuelve hora local sin offset.
+          // new Date('YYYY-MM-DD HH:MM:SS') en Node.js la trata como LOCAL.
+          tomada_en: new Date(String(r.tomada_en)).toISOString(),
           valor: Number(r.valor)
         };
         broadcastLecturaCreated(ev);
@@ -127,10 +153,10 @@ export function startLecturasPoller(intervalMs = 750) {
 
         const sensorInstaladoId = Number(r.id_sensor_instalado);
         const now = Date.now();
-        const lastAlertTs = lastAlertBySensor.get(sensorInstaladoId) ?? 0;
-        if (now - lastAlertTs < ALERT_COOLDOWN_MS) continue;
+        if (await isCoolingDown(sensorInstaladoId, now)) continue;
 
-        lastAlertBySensor.set(sensorInstaladoId, now);
+        // Actualizar caché local inmediatamente para evitar dobles alertas en el mismo tick
+        lastAlertCacheByKey.set(sensorInstaladoId, { ts: now, checkedAt: now });
 
         const descripcion = `Valor fuera de rango para ${r.tipo_medida}: ${value}. Rango esperado ${rule.min}-${rule.max}.`;
 

@@ -187,16 +187,20 @@ function normalizeCreateLecturasRequest(rawBody: any): { lecturas: CreateLectura
   return { lecturas: [parsed], single: true };
 }
 
+// fecha y hora se almacenan en hora LOCAL del servidor (sin offset).
+// Construimos el ISO sin 'Z' para que JS lo interprete como hora local,
+// luego lo convertimos a ISO UTC real.
 function combineFechaHoraISO(fecha: Date, hora: Date): string {
   const datePart = fecha.toISOString().slice(0, 10);
   const timePart = hora.toISOString().slice(11, 19);
-  return new Date(`${datePart}T${timePart}Z`).toISOString();
+  // Sin la Z → JS lo trata como hora local del proceso Node
+  return new Date(`${datePart}T${timePart}`).toISOString();
 }
 
 function combineFechaHora(fecha: Date, hora: Date): Date {
   const datePart = fecha.toISOString().slice(0, 10);
   const timePart = hora.toISOString().slice(11, 19);
-  return new Date(`${datePart}T${timePart}Z`);
+  return new Date(`${datePart}T${timePart}`);
 }
 
 function toPositiveInt(value: unknown): number | null {
@@ -331,12 +335,17 @@ function resolveCreateLecturaTimestamp(item: CreateLecturaItemInput): Date {
 }
 
 function buildLecturaDateParts(timestamp: Date): { fecha: Date; hora: Date } {
-  const fecha = new Date(timestamp);
-  fecha.setHours(0, 0, 0, 0);
+  // timestamp puede venir como UTC; usamos métodos UTC para extraer las partes
+  // y construir los valores tal como los esperaría la base de datos (hora local).
+  const year = timestamp.getUTCFullYear();
+  const month = timestamp.getUTCMonth();
+  const day = timestamp.getUTCDate();
 
-  const hh = String(timestamp.getHours()).padStart(2, '0');
-  const mm = String(timestamp.getMinutes()).padStart(2, '0');
-  const ss = String(timestamp.getSeconds()).padStart(2, '0');
+  const fecha = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+
+  const hh = String(timestamp.getUTCHours()).padStart(2, '0');
+  const mm = String(timestamp.getUTCMinutes()).padStart(2, '0');
+  const ss = String(timestamp.getUTCSeconds()).padStart(2, '0');
   const hora = new Date(`1970-01-01T${hh}:${mm}:${ss}Z`);
 
   return { fecha, hora };
