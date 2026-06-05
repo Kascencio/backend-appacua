@@ -86,7 +86,7 @@ export function startLecturasPoller(intervalMs = 750) {
         SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
                CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en,
                si.id_instalacion, cs.sensor AS tipo_medida, cs.unidad_medida,
-               cs.nombre AS sensor_nombre,
+               cs.sensor AS sensor_nombre,
                i.nombre_instalacion
         FROM lectura l
         JOIN sensor_instalado si ON si.id_sensor_instalado = l.id_sensor_instalado
