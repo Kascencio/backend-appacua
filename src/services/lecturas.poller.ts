@@ -85,10 +85,13 @@ export function startLecturasPoller(intervalMs = 750) {
       const rows = await prisma.$queryRawUnsafe<any[]>(`
         SELECT l.id_lectura, l.id_sensor_instalado, l.valor,
                CAST(CONCAT(l.fecha, ' ', l.hora) AS DATETIME) AS tomada_en,
-               si.id_instalacion, cs.sensor AS tipo_medida, cs.unidad_medida
+               si.id_instalacion, cs.sensor AS tipo_medida, cs.unidad_medida,
+               cs.nombre AS sensor_nombre,
+               i.nombre_instalacion
         FROM lectura l
         JOIN sensor_instalado si ON si.id_sensor_instalado = l.id_sensor_instalado
         JOIN catalogo_sensores cs ON cs.id_sensor = si.id_sensor
+        LEFT JOIN instalacion i ON i.id_instalacion = si.id_instalacion
         WHERE l.id_lectura > ?
         ORDER BY l.id_lectura ASC
         LIMIT 1000
@@ -178,11 +181,11 @@ export function startLecturasPoller(intervalMs = 750) {
           dato_puntual: value,
           instalacion: {
             id_instalacion: instalacionId,
-            nombre_instalacion: `Instalación ${instalacionId}`,
+            nombre_instalacion: String(r.nombre_instalacion || `Instalación ${instalacionId}`),
           },
           sensor: {
             id_sensor_instalado: sensorInstaladoId,
-            nombre: String(r.tipo_medida || ''),
+            nombre: String(r.sensor_nombre || r.tipo_medida || ''),
             unidad_medida: String(r.unidad_medida || '') || undefined,
           },
         }).catch(() => undefined);

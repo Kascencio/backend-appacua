@@ -28,7 +28,10 @@ export type TelegramAlertPayload = {
 };
 
 function escapeMarkdown(text: string): string {
-  return text.replace(/([_\-*\[\]()~`>#+=|{}.!])/g, '\\$1');
+  // Escape ALL MarkdownV2 reserved characters (including backslash itself first)
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/([_*[\]()~`>#+=|{}.!\-])/g, '\\$1');
 }
 
 function uniqueChatIds(chatIds: string[]): string[] {
@@ -55,20 +58,17 @@ function buildSendMessageBody(message: string, chatId: string, options?: Telegra
 }
 
 export function buildTelegramAlertMessage(payload: TelegramAlertPayload): string {
-  const instalacion = payload.instalacion?.nombre_instalacion
-    ? `Instalacion: ${payload.instalacion.nombre_instalacion}`
-    : 'Instalacion: N/A';
-
+  const instalacionNombre = payload.instalacion?.nombre_instalacion || 'N/A';
   const sensorName = payload.sensor?.nombre ?? 'Sensor';
   const unidad = payload.sensor?.unidad_medida ? ` ${payload.sensor.unidad_medida}` : '';
 
   return [
-    '*Alerta AquaMonitor*',
-    `ID: ${payload.id_alertas}`,
-    `${instalacion}`,
-    `Sensor: ${escapeMarkdown(sensorName)}`,
-    `Valor: ${payload.dato_puntual}${escapeMarkdown(unidad)}`,
-    `Detalle: ${escapeMarkdown(payload.descripcion)}`,
+    '\u26a0\ufe0f *Alerta AquaMonitor*',
+    `🏭 Instalación: ${escapeMarkdown(instalacionNombre)}`,
+    `📡 Sensor: ${escapeMarkdown(sensorName)}`,
+    `📊 Valor: ${escapeMarkdown(String(payload.dato_puntual))}${escapeMarkdown(unidad)}`,
+    `📋 Detalle: ${escapeMarkdown(payload.descripcion)}`,
+    `🔖 ID Alerta: ${escapeMarkdown(String(payload.id_alertas))}`,
   ].join('\n');
 }
 
@@ -123,37 +123,40 @@ async function resolveChatIdsForInstalacion(idInstalacion: number): Promise<stri
 
     const idSucursal = instalacion.id_organizacion_sucursal;
 
-    // 2. Buscar usuarios con suscripción activa de telegram Y estado activo
-    const suscripcionesActivas = await prisma.telegram_suscripcion.findMany({
+    // 2. Obtener todas las suscripciones activas con sus roles y asignaciones
+    const todasSubs = await prisma.telegram_suscripcion.findMany({
       where: {
         activo: true,
         usuario: { estado: 'activo' },
       },
-      include: {
+      select: {
+        chat_id: true,
         usuario: {
-          include: {
-            tipo_rol: true,
+          select: {
+            tipo_rol: { select: { nombre: true } },
             asignacion_usuario: {
               where: {
                 OR: [
                   { id_instalacion: idInstalacion },
-                  { id_organizacion_sucursal: idSucursal, id_instalacion: null }
-                ]
-              }
-            }
-          }
-        }
-      }
+                  { id_organizacion_sucursal: idSucursal, id_instalacion: null },
+                ],
+              },
+              select: { id_asignacion: true },
+            },
+          },
+        },
+      },
     });
 
-    // 3. Filtrar los usuarios que tienen acceso
-    const authorizedChatIds = suscripcionesActivas
-      .filter(sub => {
-        const isSuperAdmin = sub.usuario.tipo_rol?.nombre?.toLowerCase() === 'superadmin';
+    // 3. Superadmins reciben todas las alertas; usuarios regulares solo si tienen asignación
+    const authorizedChatIds = todasSubs
+      .filter((sub) => {
+        const rolNombre = sub.usuario.tipo_rol?.nombre?.toLowerCase() ?? '';
+        const isSuperAdmin = rolNombre.includes('superadmin');
         const hasAssignment = sub.usuario.asignacion_usuario.length > 0;
         return isSuperAdmin || hasAssignment;
       })
-      .map(sub => sub.chat_id);
+      .map((sub) => sub.chat_id);
 
     return uniqueChatIds([
       ...configuredChatIds,
