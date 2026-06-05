@@ -8,7 +8,7 @@ type RangeRule = {
   max: number;
 };
 
-const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutos por sensor
+const ALERT_COOLDOWN_MS = 1 * 60 * 1000; // 1 minuto por sensor para facilitar las pruebas
 const pollerDiagnostics = {
   started: false,
   interval_ms: 0,
