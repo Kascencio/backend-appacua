@@ -843,6 +843,10 @@ export async function deleteProceso(req: FastifyRequest<{ Params: { id: string }
       }
     }
 
+    if (existing.instalacion.length > 0) {
+      return reply.status(400).send({ error: 'No se puede eliminar el proceso porque está asignado a una o más instalaciones. Por favor, asigne otro proceso a dichas instalaciones antes de eliminarlo.' });
+    }
+
     await prisma.procesos.delete({ where: { id_proceso: id } });
     return reply.status(204).send();
   } catch (error: any) {
